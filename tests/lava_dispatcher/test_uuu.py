@@ -41,7 +41,10 @@ class TestUUUbootAction(StdoutTestCase):  # pylint: disable=too-many-public-meth
         super().setUp()
         self.factory = UUUBootFactory()
 
-    @patch("lava_dispatcher.actions.boot.uuu.which", return_value="/bin/test_uuu")
+    @patch(
+        "lava_dispatcher.utils.uuu.OptionalContainerUuuAction.which",
+        return_value="/bin/test_uuu",
+    )
     def test_pipeline_uuu_only_uboot(self, which_mock):
         job = self.factory.create_imx8mq_job("sample_jobs/uuu-bootimage-only.yaml")
         self.assertIsNotNone(job)
@@ -97,6 +100,7 @@ class TestUUUActionDriver(unittest.TestCase):
                 "docker",
                 "run",
                 "--rm",
+                "--init",
                 "--privileged",
                 "--volume=/dev:/dev",
                 "--net=host",
@@ -133,6 +137,7 @@ class TestUUUActionDriver(unittest.TestCase):
                 "10.192.244.5:2376",
                 "run",
                 "--rm",
+                "--init",
                 "--privileged",
                 "--volume=/dev:/dev",
                 "--net=host",

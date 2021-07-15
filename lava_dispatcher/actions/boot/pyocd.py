@@ -68,11 +68,17 @@ class BootPyOCDRetry(RetryAction):
 
     def populate(self, parameters):
         self.pipeline = Pipeline(parent=self, job=self.job, parameters=parameters)
+        method_params = self.job.device["actions"]["boot"]["methods"]["pyocd"][
+            "parameters"
+        ]
         if self.job.device.hard_reset_command:
             self.pipeline.add_action(ResetDevice())
             self.pipeline.add_action(WaitDeviceBoardID(self.job.device.get("board_id")))
+        if method_params.get("connect_before_flash", False):
+            self.pipeline.add_action(ConnectDevice())
         self.pipeline.add_action(FlashPyOCDAction())
-        self.pipeline.add_action(ConnectDevice())
+        if not method_params.get("connect_before_flash", False):
+            self.pipeline.add_action(ConnectDevice())
 
 
 class FlashPyOCDAction(Action):
@@ -121,11 +127,15 @@ class FlashPyOCDAction(Action):
         if not self.exec_list:
             self.errors = "No PyOCD command to execute"
 
+        pre_os_command = str(self.job.device.pre_os_command)
+        if pre_os_command:
+            self.exec_list.append(pre_os_command.split(" "))
+
     def run(self, connection, max_end_time):
         connection = super().run(connection, max_end_time)
         for pyocd_command in self.exec_list:
             pyocd = " ".join(pyocd_command)
             self.logger.info("PyOCD command: %s", pyocd)
-            if not self.run_command(pyocd.split(" ")):
+            if not self.run_command(pyocd.split(" "), allow_silent=True):
                 raise JobError("%s command failed" % (pyocd.split(" ")))
         return connection

@@ -40,7 +40,6 @@ from lava_scheduler_app.models import (
     DeviceType,
     GroupDeviceTypePermission,
     GroupDevicePermission,
-    GroupWorkerPermission,
     Tag,
     TestJob,
     Worker,
@@ -49,6 +48,9 @@ from lava_results_app import models as result_models
 from linaro_django_xmlrpc.models import AuthToken
 
 from lava_rest_app import versions
+
+
+Path = type(pathlib.Path())
 
 
 EXAMPLE_JOB = """
@@ -76,9 +78,29 @@ actions: []
 protocols: {}
 """
 
+EXAMPLE_WORKING_JOB_RESTRICTED_DEVICE_TYPE = """
+device_type: restricted_device_type1
+job_name: test
+visibility: public
+timeouts:
+  job:
+    minutes: 10
+  action:
+    minutes: 5
+actions: []
+protocols: {}
+"""
+
 LOG_FILE = """
 - {"dt": "2018-10-03T16:28:28.199903", "lvl": "info", "msg": "lava-dispatcher, installed at version: 2018.7-1+stretch"}
 - {"dt": "2018-10-03T16:28:28.200807", "lvl": "info", "msg": "start: 0 validate"}
+"""
+
+EXAMPLE_DEVICE = """
+{% extends 'qemu.jinja2' %}
+{% set mac_addr = 'BA:DD:AD:CC:09:01' %}
+{% set memory = '1024' %}
+{% set sync_to_lava = {'device_type': 'qemu', 'worker': 'worker0', 'tags': ['1gb', 'qemu01']} %}
 """
 
 
@@ -189,7 +211,7 @@ class TestRestApi:
         self.private_testjob1 = TestJob.objects.create(
             definition=EXAMPLE_JOB,
             submitter=self.admin,
-            requested_device_type=self.public_device_type1,
+            requested_device_type=self.restricted_device_type1,
             health=TestJob.HEALTH_COMPLETE,
         )
         self.private_testjob1.submit_time = timezone.now() - timedelta(days=7)
@@ -561,6 +583,78 @@ ok 2 bar
         msg = json.loads(response.content)
         assert msg["message"] == "Job valid."
 
+    def test_testjob_validate_testdef(self):
+        "Test validating valid test definition."
+        testdef = """
+        metadata:
+            format: Lava-Test Test Definition 1.0
+            name: testdef validation
+        parameters:
+            key1: val1
+        run:
+            steps:
+            - lava-test-case kernel-info --shell uname -a
+        """
+        response = self.userclient.post(
+            reverse("api-root", args=[self.version]) + "jobs/validate_testdef/",
+            {"definition": testdef},
+        )
+        assert response.status_code == 200  # nosec - unit test support
+        msg = json.loads(response.content)
+        assert msg["message"] == "Test definition valid."
+
+    def test_testjob_validate_testdef_extra_key(self):
+        "Test extra keys are allowed."
+        testdef = """
+        metadata:
+            format: Lava-Test Test Definition 1.0
+            name: testdef validation
+            extra: allow extra
+        """
+        response = self.userclient.post(
+            reverse("api-root", args=[self.version]) + "jobs/validate_testdef/",
+            {"definition": testdef},
+        )
+        assert response.status_code == 200  # nosec - unit test support
+        msg = json.loads(response.content)
+        assert msg["message"] == "Test definition valid."
+
+    def test_testjob_validate_testdef_missing_key(self):
+        "Test test definition without required 'name' metadata is invalid."
+        testdef = """
+        metadata:
+            format: Lava-Test Test Definition 1.0
+        """
+        response = self.userclient.post(
+            reverse("api-root", args=[self.version]) + "jobs/validate_testdef/",
+            {"definition": testdef},
+        )
+        assert response.status_code == 200  # nosec - unit test support
+        msg = json.loads(response.content)
+        assert (
+            msg["message"]
+            == "Test defnition invalid: required key not provided @ data['metadata']['name']"
+        )
+
+    def test_testjob_validate_testdef_wrong_key_type(self):
+        "Test test definition key with wrong type is invalid."
+        testdef = """
+        metadata:
+            format: Lava-Test Test Definition 1.0
+            name: testdef validation
+        parameters: wrong str type instead of dict
+        """
+        response = self.userclient.post(
+            reverse("api-root", args=[self.version]) + "jobs/validate_testdef/",
+            {"definition": testdef},
+        )
+        assert response.status_code == 200  # nosec - unit test support
+        msg = json.loads(response.content)
+        assert (
+            msg["message"]
+            == "Test defnition invalid: expected dict for dictionary value @ data['parameters']"
+        )
+
     def test_testjobs_filters(self):
         data = self.hit(
             self.adminclient,
@@ -746,6 +840,16 @@ ok 2 bar
             reverse("api-root", args=[self.version]) + "devices/public01/dictionary/"
         )
         assert response.status_code == 400  # nosec
+
+    def test_devices_validate(self):
+        response = self.userclient.post(
+            reverse("api-root", args=[self.version]) + "devices/validate/",
+            data=EXAMPLE_DEVICE,
+            content_type="text/plain",
+        )
+        assert response.status_code == 200  # nosec - unit test support
+        msg = json.loads(response.content)
+        assert msg["message"] == "Device dictionary valid."
 
     def test_devices_filters(self):
         data = self.hit(
@@ -1074,7 +1178,7 @@ ok 2 bar
         assert response.status_code == 400  # nosec
 
     def test_workers_set_env(self, monkeypatch, tmpdir):
-        class MyPath(pathlib.PosixPath):
+        class MyPath(Path):
             def __new__(cls, path, *args, **kwargs):
                 if path == "example.com":
                     return super().__new__(cls, path, *args, **kwargs)
@@ -1117,7 +1221,7 @@ ok 2 bar
         assert response.status_code == 400  # nosec
 
     def test_workers_set_config(self, monkeypatch, tmpdir):
-        class MyPath(pathlib.PosixPath):
+        class MyPath(Path):
             def __new__(cls, path, *args, **kwargs):
                 if path == "example.com":
                     return super().__new__(cls, path, *args, **kwargs)
@@ -1157,95 +1261,6 @@ ok 2 bar
         response = self.adminclient.post(
             reverse("api-root", args=[self.version])
             + "workers/%s/config/" % self.worker1.hostname
-        )
-        assert response.status_code == 400  # nosec
-
-    def test_workers_get_certificate(self, monkeypatch, tmpdir):
-        (tmpdir / ("%s.key" % self.worker1.hostname)).write_text(
-            "hello", encoding="utf-8"
-        )
-
-        class MyPath(pathlib.PosixPath):
-            def __new__(cls, path, *args, **kwargs):
-                if path == settings.SLAVES_CERTS:
-                    return super().__new__(cls, str(tmpdir), *args, **kwargs)
-                else:
-                    assert 0  # nosec
-
-        monkeypatch.setattr(pathlib, "Path", MyPath)
-
-        # no permission
-        response = self.userclient.get(
-            reverse("api-root", args=[self.version])
-            + "workers/%s/certificate/" % self.worker1.hostname
-        )
-        assert response.status_code == 403  # nosec
-
-        GroupWorkerPermission.objects.assign_perm(
-            Worker.CHANGE_PERMISSION, self.group2, self.worker1
-        )
-        data = self.hit(
-            self.userclient,
-            reverse("api-root", args=[self.version])
-            + "workers/%s/certificate/" % self.worker1.hostname,
-        )
-        data = yaml_load(data)
-        assert data == str("hello")  # nosec
-
-        # worker does not exists
-        response = self.userclient.get(
-            reverse("api-root", args=[self.version])
-            + "workers/invalid_hostname/certificate/"
-        )
-        assert response.status_code == 404  # nosec
-
-        # no encryption key file
-        (tmpdir / ("%s.key" % self.worker1.hostname)).remove()
-        response = self.userclient.get(
-            reverse("api-root", args=[self.version])
-            + "workers/%s/certificate/" % self.worker1.hostname
-        )
-        assert response.status_code == 400  # nosec
-
-    def test_workers_set_certificate(self, monkeypatch, tmpdir):
-        class MyPath(pathlib.PosixPath):
-            def __new__(cls, path, *args, **kwargs):
-                if path == settings.SLAVES_CERTS:
-                    return super().__new__(cls, str(tmpdir), *args, **kwargs)
-                else:
-                    assert 0  # nosec
-
-        monkeypatch.setattr(pathlib, "Path", MyPath)
-        response = self.adminclient.post(
-            reverse("api-root", args=[self.version])
-            + "workers/%s/certificate/" % self.worker1.hostname,
-            {"key": "hello"},
-        )
-        assert response.status_code == 200  # nosec
-        assert (tmpdir / ("%s.key" % self.worker1.hostname)).read_text(  # nosec
-            encoding="utf-8"
-        ) == "hello"
-
-        # worker does not exists
-        response = self.adminclient.post(
-            reverse("api-root", args=[self.version])
-            + "workers/invalid_hostname/certificate/",
-            {"env": "hello"},
-        )
-        assert response.status_code == 404  # nosec
-
-        # insufficient permissions
-        response = self.userclient.post(
-            reverse("api-root", args=[self.version])
-            + "workers/%s/certificate/" % self.worker1.hostname,
-            {"env": "hello"},
-        )
-        assert response.status_code == 403  # nosec
-
-        # No env parameter
-        response = self.adminclient.post(
-            reverse("api-root", args=[self.version])
-            + "workers/%s/certificate/" % self.worker1.hostname
         )
         assert response.status_code == 400  # nosec
 
@@ -1354,12 +1369,33 @@ ok 2 bar
         )
         assert len(data["results"]) == 1  # nosec - unit test support
 
-    def test_submit_unauthorized(self):
-        response = self.userclient.post(
+    def test_submit_no_authentication(self):
+        response = self.userclient_no_token.post(
             reverse("api-root", args=[self.version]) + "jobs/",
             {"definition": EXAMPLE_JOB},
         )
+        assert response.status_code == 403  # nosec - unit test support
+
+    def test_submit_unauthorized(self):
+        response = self.userclient.post(
+            reverse("api-root", args=[self.version]) + "jobs/",
+            {"definition": EXAMPLE_WORKING_JOB_RESTRICTED_DEVICE_TYPE},
+        )
         assert response.status_code == 400  # nosec - unit test support
+        msg = json.loads(response.content)
+        assert (
+            msg["message"]
+            == "Devices unavailable: Device type 'restricted_device_type1' is unavailable to user 'user1'"
+        )
+
+    def test_submit_authenticated(self):
+        response = self.userclient.post(
+            reverse("api-root", args=[self.version]) + "jobs/",
+            {"definition": EXAMPLE_WORKING_JOB},
+            format="json",
+        )
+        assert response.status_code == 201  # nosec - unit test support
+        assert TestJob.objects.count() == 3  # nosec - unit test support
 
     def test_submit_bad_request_no_device_type(self):
         response = self.adminclient.post(
@@ -1373,7 +1409,7 @@ ok 2 bar
             content["message"] == "job submission failed: 'device_type'."
         )  # nosec - unit test support
 
-    def test_submit(self):
+    def test_submit_admin(self):
         response = self.adminclient.post(
             reverse("api-root", args=[self.version]) + "jobs/",
             {"definition": EXAMPLE_WORKING_JOB},
@@ -1588,33 +1624,6 @@ ok 2 bar
         )
         assert len(data["results"]) == 1  # nosec - unit test support
 
-    def test_system_certificate(self, monkeypatch, tmpdir):
-        (tmpdir / "master.key").write_text("hello", encoding="utf-8")
-
-        class MyPath(pathlib.PosixPath):
-            def __new__(cls, path, *args, **kwargs):
-                if path == settings.MASTER_CERT_PUB:
-                    return super().__new__(
-                        cls, str(tmpdir / "master.key"), *args, **kwargs
-                    )
-                else:
-                    assert 0  # nosec
-
-        monkeypatch.setattr(pathlib, "Path", MyPath)
-        data = self.hit(
-            self.userclient,
-            reverse("api-root", args=[self.version]) + "system/certificate/",
-        )
-        data = yaml_load(data)
-        assert data == str("hello")  # nosec
-
-        # no encryption key file
-        (tmpdir / "master.key").remove()
-        response = self.userclient.get(
-            reverse("api-root", args=[self.version]) + "system/certificate/"
-        )
-        assert response.status_code == 404  # nosec
-
     def test_system_version(self):
         version = self.hit(
             self.userclient,
@@ -1652,6 +1661,20 @@ ok 2 bar
             reverse("api-root", args=[self.version]) + "system/master_config/"
         )
         assert response.status_code == 200  # nosec
+
+    def test_delete_not_authorized(self):
+        response = self.userclient.delete(
+            reverse("api-root", args=[self.version])
+            + "jobs/%s/" % self.public_testjob1.id
+        )
+        assert response.status_code == 403  # nosec
+
+    def test_delete_not_authenticated(self):
+        response = self.userclient_no_token.delete(
+            reverse("api-root", args=[self.version])
+            + "jobs/%s/" % self.public_testjob1.id
+        )
+        assert response.status_code == 403  # nosec
 
 
 def test_view_root(client):

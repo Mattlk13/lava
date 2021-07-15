@@ -1,9 +1,7 @@
-import pathlib
 import pytest
 import unittest
 import xmlrpc.client
 
-from django.conf import settings
 from django.contrib.auth.models import Group, Permission, User
 from django.test.client import Client
 from io import BytesIO as StringIO
@@ -323,9 +321,7 @@ secrets:
   foo: bar
   username: secret
 """
-        self.assertRaises(
-            SubmissionException, validate_submission, yaml_safe_load(secrets)
-        )
+        self.assertTrue(validate_submission(yaml_safe_load(secrets)))
 
     def test_multinode(self):
         # Without protocols
@@ -1334,9 +1330,9 @@ def test_workers_add(setup):
         server("admin", "admin").scheduler.workers.add("dispatcher.example.com") is None
     )
     assert Worker.objects.count() == 2  # nosec
-    assert Worker.objects.all()[1].hostname == "dispatcher.example.com"  # nosec
-    assert Worker.objects.all()[1].description is None  # nosec
-    assert Worker.objects.all()[1].health == Worker.HEALTH_ACTIVE  # nosec
+    worker = Worker.objects.get(hostname="dispatcher.example.com")
+    assert worker.description is None  # nosec
+    assert worker.health == Worker.HEALTH_ACTIVE  # nosec
 
     # 4. as admin set description and health => success
     assert (  # nosec
@@ -1346,9 +1342,9 @@ def test_workers_add(setup):
         is None
     )
     assert Worker.objects.count() == 3  # nosec
-    assert Worker.objects.all()[2].hostname == "worker.example.com"  # nosec
-    assert Worker.objects.all()[2].description == "worker"  # nosec
-    assert Worker.objects.all()[2].health == Worker.HEALTH_RETIRED  # nosec
+    worker = Worker.objects.get(hostname="worker.example.com")
+    assert worker.description == "worker"  # nosec
+    assert worker.health == Worker.HEALTH_RETIRED  # nosec
 
     # 5. already used hostname => exception
     with pytest.raises(xmlrpc.client.Fault) as exc:
@@ -1600,124 +1596,6 @@ def test_workers_set_env_exceptions(setup, mocker, tmpdir):
     assert (  # nosec
         exc.value.faultString
         == "User 'user' is missing permission lava_scheduler_app.change_worker ."
-    )
-
-
-@pytest.mark.django_db
-def test_workers_get_certificate(setup, monkeypatch, tmpdir):
-    (tmpdir / ("example.com.key")).write_text("hello", encoding="utf-8")
-
-    class MyPath(pathlib.PosixPath):
-        def __new__(cls, path, *args, **kwargs):
-            if path == "example.com":
-                return super().__new__(cls, path, *args, **kwargs)
-            elif path == settings.SLAVES_CERTS:
-                return super().__new__(cls, str(tmpdir), *args, **kwargs)
-            else:
-                assert 0  # nosec
-
-    monkeypatch.setattr(pathlib, "Path", MyPath)
-    assert (  # nosec
-        str(server("admin", "admin").scheduler.workers.get_certificate("example.com"))
-        == "hello"
-    )
-
-
-@pytest.mark.django_db
-def test_workers_get_certificate_exceptions(setup, monkeypatch, tmpdir):
-    class MyPath(pathlib.PosixPath):
-        def __new__(cls, path, *args, **kwargs):
-            if path in ["example.com", "example.com/../", "worker.example.com"]:
-                return super().__new__(cls, path, *args, **kwargs)
-            elif path == settings.SLAVES_CERTS:
-                return super().__new__(cls, str(tmpdir), *args, **kwargs)
-            else:
-                assert 0  # nosec
-
-    monkeypatch.setattr(pathlib, "Path", MyPath)
-
-    # 1. invalid worker name (should not be a path)
-    with pytest.raises(xmlrpc.client.Fault) as exc:
-        server("admin", "admin").scheduler.workers.get_certificate("example.com/../")
-    assert exc.value.faultCode == 400  # nosec
-    assert exc.value.faultString == "Invalid worker name"  # nosec
-
-    # 2. worker does not exists
-    with pytest.raises(xmlrpc.client.Fault) as exc:
-        server("admin", "admin").scheduler.workers.get_certificate("worker.example.com")
-    assert exc.value.faultCode == 404  # nosec
-    assert (  # nosec
-        exc.value.faultString == "Worker 'worker.example.com' was not found."
-    )
-
-    # 3. no certificate file
-    with pytest.raises(xmlrpc.client.Fault) as exc:
-        server("admin", "admin").scheduler.workers.get_certificate("example.com")
-    assert exc.value.faultCode == 404  # nosec
-    assert (  # nosec
-        exc.value.faultString
-        == "Worker 'example.com' does not have a certificate uploaded"
-    )
-
-
-@pytest.mark.django_db
-def test_workers_set_certificate(setup, monkeypatch, tmpdir):
-    class MyPath(pathlib.PosixPath):
-        def __new__(cls, path, *args, **kwargs):
-            if path == "example.com":
-                return super().__new__(cls, path, *args, **kwargs)
-            elif path == settings.SLAVES_CERTS:
-                return super().__new__(cls, str(tmpdir), *args, **kwargs)
-            else:
-                assert 0  # nosec
-
-    monkeypatch.setattr(pathlib, "Path", MyPath)
-    assert (  # nosec
-        server("admin", "admin").scheduler.workers.set_certificate(
-            "example.com", "hello"
-        )
-        is True
-    )
-    assert (tmpdir / "example.com.key").read_text(encoding="utf-8") == "hello"  # nosec
-
-
-@pytest.mark.django_db
-def test_workers_set_certificate_exceptions(setup, monkeypatch, tmpdir):
-    class MyPath(pathlib.PosixPath):
-        def __new__(cls, path, *args, **kwargs):
-            if path in ["example.com", "example.com/../", "worker.example.com"]:
-                return super().__new__(cls, path, *args, **kwargs)
-            elif path == settings.SLAVES_CERTS:
-                return super().__new__(cls, str(tmpdir), *args, **kwargs)
-            else:
-                assert 0  # nosec
-
-    monkeypatch.setattr(pathlib, "Path", MyPath)
-
-    # 1. invalid worker name (should not be a path)
-    with pytest.raises(xmlrpc.client.Fault) as exc:
-        server("admin", "admin").scheduler.workers.set_certificate(
-            "example.com/../", "error"
-        )
-    assert exc.value.faultCode == 400  # nosec
-    assert exc.value.faultString == "Invalid worker name"  # nosec
-
-    # 2. worker does not exists
-    with pytest.raises(xmlrpc.client.Fault) as exc:
-        server("admin", "admin").scheduler.workers.set_certificate(
-            "worker.example.com", "error"
-        )
-    assert exc.value.faultCode == 404  # nosec
-    assert (  # nosec
-        exc.value.faultString == "Worker 'worker.example.com' was not found."
-    )
-    # 3. as user => error
-    with pytest.raises(xmlrpc.client.Fault) as exc:
-        server("user", "user").scheduler.workers.set_certificate("example.com", "hello")
-    assert exc.value.faultCode == 403  # nosec
-    assert (  # nosec
-        exc.value.faultString
-        == "Insufficient permissions. Please contact system administrator."
     )
 
 

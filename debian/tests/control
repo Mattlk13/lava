@@ -1,11 +1,10 @@
 Tests: management
-Depends: lava-dispatcher, lava-server
+Depends: postgresql, apache2, lava-dispatcher, lava-server
 Restrictions: allow-stderr, needs-root, isolation-container
 
 Tests: testsuite
 Depends: dh-python,
          git,
-         iproute2,
          lava-coordinator,
          lava-dispatcher,
          lava-server,

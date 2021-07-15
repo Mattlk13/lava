@@ -28,6 +28,8 @@ class DockerRun:
         self.image = image
         self.__local__ = False
         self.__name__ = None
+        self.__network__ = None
+        self.__suffix__ = ""
         self.__hostname__ = None
         self.__workdir__ = None
         self.__devices__ = []
@@ -38,11 +40,29 @@ class DockerRun:
         self.__docker_options__ = []
         self.__docker_run_options__ = []
 
+    @classmethod
+    def from_parameters(cls, params, job):
+        image = params["image"]
+        run = cls(image)
+        suffix = "-lava-" + str(job.job_id)
+        if "container_name" in params:
+            run.name(params["container_name"] + suffix)
+        run.suffix(suffix)
+        run.network(params.get("network_from", None))
+        run.local(params.get("local", False))
+        return run
+
     def local(self, local):
         self.__local__ = local
 
     def name(self, name):
         self.__name__ = name
+
+    def network(self, network):
+        self.__network__ = network
+
+    def suffix(self, suffix):
+        self.__suffix__ = suffix
 
     def hostname(self, hostname):
         self.__hostname__ = hostname
@@ -81,7 +101,7 @@ class DockerRun:
         cmd = (
             ["docker"]
             + self.__docker_options__
-            + ["run", "--rm"]
+            + ["run", "--rm", "--init"]
             + self.__docker_run_options__
         )
         if self.__interactive__:
@@ -90,6 +110,8 @@ class DockerRun:
             cmd.append("--tty")
         if self.__name__:
             cmd.append(f"--name={self.__name__}")
+        if self.__network__:
+            cmd.append(f"--network=container:{self.__network__}{self.__suffix__}")
         if self.__hostname__:
             cmd.append(f"--hostname={self.__hostname__}")
         if self.__workdir__:
@@ -148,6 +170,27 @@ class DockerRun:
             except subprocess.CalledProcessError:
                 time.sleep(delay)
                 delay = delay * 2  # exponential backoff
+
+    def wait_file(self, filename):
+        delay = 1
+        while True:
+            try:
+                subprocess.check_call(
+                    ["docker", "exec", self.__name__, "test", "-e", filename],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return
+            except subprocess.CalledProcessError:
+                time.sleep(delay)
+                delay = delay * 2  # exponential backoff
+
+    def destroy(self):
+        subprocess.call(
+            ["docker", "rm", "-f", self.__name__],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def __check_image_arch__(self):
         host = subprocess.check_output(["arch"], text=True).strip()

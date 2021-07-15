@@ -56,6 +56,9 @@ class TestBareboxTemplates(BaseTemplate.BaseTemplateCases):
     def test_imx6qp_wandboard_revd1_template(self):
         barebox_helper(self, "imx6qp-wandboard-revd1")
 
+    def test_imx8mq_zii_ultra_zest_template(self):
+        barebox_helper(self, "imx8mq-zii-ultra-zest")
+
     def test_dove_cubox_template(self):
         barebox_helper(self, "dove-cubox")
 
@@ -64,3 +67,9 @@ class TestBareboxTemplates(BaseTemplate.BaseTemplateCases):
 
     def test_socfpga_cyclone5_socrates_template(self):
         barebox_helper(self, "socfpga-cyclone5-socrates")
+
+    def test_stm32mp157c_lxa_mc1_template(self):
+        barebox_helper(self, "stm32mp157c-lxa-mc1")
+
+    def test_jh7100_beaglev_starlight_template(self):
+        barebox_helper(self, "jh7100-beaglev-starlight")

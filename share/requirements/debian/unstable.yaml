@@ -4,11 +4,17 @@
 # contains the dependency, e.g. backports.
 
 lava-server:
+  aiohttp:
+    name: python3-aiohttp
+  celery:
+    name: python3-celery
   django-auth-ldap:
     version: ">=1.2.12"
     name: python3-django-auth-ldap
   PyYAML:
     name: python3-yaml
+  django-allauth:
+    name: python3-django-allauth
   django-filter:
     name: python3-django-filters
   django-tables2:
@@ -17,6 +23,8 @@ lava-server:
   django:
     version: ">=1.10"
     name: python3-django
+  django-environ:
+    name: python3-django-environ
   djangorestframework:
     name: python3-djangorestframework
   djangorestframework-filters:
@@ -26,6 +34,8 @@ lava-server:
   docutils:
     version: ">=0.6"
     name: python3-docutils
+  eventlet:
+    name: python3-eventlet
   jinja2:
     name: python3-jinja2
   psycopg2:
@@ -89,6 +99,8 @@ lava-server:
     unittests: true
 
 lava-dispatcher:
+  aiohttp:
+    name: python3-aiohttp
   PyYAML:
     name: python3-yaml
   configobj:
@@ -173,8 +185,13 @@ lava-dispatcher:
 lava-common:
   PyYAML:
     name: python3-yaml
-  pyzmq:
-    name: python3-zmq
   voluptuous:
     version: ">=0.8.8"
     name: python3-voluptuous
+
+lava-dispatcher-host:
+  requests:
+    name: python3-requests
+  pyudev:
+    version: ">=0.21"
+    name: python3-pyudev

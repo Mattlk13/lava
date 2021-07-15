@@ -55,12 +55,7 @@ COMMON = {
     "description": "LAVA common",
     "packages": modules("lava_common"),
     "scripts": [],
-    "data_files": [
-        (
-            "/usr/share/lava-common/",
-            ["share/create_certificate.py", "share/lava-schema.py"],
-        )
-    ],
+    "data_files": [("/usr/share/lava-common/", ["share/lava-schema.py"])],
 }
 
 COORDINATOR = {
@@ -86,14 +81,13 @@ DISPATCHER = {
     "package_data": {
         "lava_dispatcher": ["dynamic_vm_keys/lava*", "lava_test_shell/**"]
     },
-    "scripts": ["lava/dispatcher/lava-run", "lava/dispatcher/lava-slave"],
+    "scripts": ["lava/dispatcher/lava-run", "lava/dispatcher/lava-worker"],
     "data_files": [
         ("/etc/exports.d/", ["etc/lava-dispatcher-nfs.exports"]),
-        ("/etc/lava-dispatcher/", ["etc/lava-slave"]),
-        ("/etc/lava-dispatcher/certificates.d/", []),
-        ("/etc/logrotate.d/", ["etc/logrotate.d/lava-slave-log"]),
+        ("/etc/lava-dispatcher/", ["etc/lava-worker"]),
+        ("/etc/logrotate.d/", ["etc/logrotate.d/lava-worker-log"]),
         ("/etc/modprobe.d/", ["etc/lava-modules.conf"]),
-        ("/lib/systemd/system/", ["etc/lava-slave.service"]),
+        ("/lib/systemd/system/", ["etc/lava-worker.service"]),
         ("/etc/systemd/system/systemd-udevd.service.d/", ["etc/udev/override.conf"]),
         ("/usr/share/lava-dispatcher/", ["etc/tftpd-hpa"]),
         ("/usr/share/lava-dispatcher/apache2/", ["share/apache2/lava-dispatcher.conf"]),
@@ -106,7 +100,15 @@ DISPATCHER_HOST = {
     "name": "lava-dispatcher-host",
     "description": "LAVA dispatcher host",
     "packages": modules("lava_dispatcher_host"),
-    "scripts": ["lava_dispatcher_host/lava-dispatcher-host"],
+    "scripts": [
+        "lava_dispatcher_host/lava-dispatcher-host",
+        "lava_dispatcher_host/lava-docker-worker",
+    ],
+    "data_files": [
+        ("/lib/systemd/system/", ["etc/lava-docker-worker.service"]),
+        ("/etc/lava-dispatcher-host/", ["etc/lava-docker-worker"]),
+        ("/etc/logrotate.d/", ["etc/logrotate.d/lava-dispatcher-host-log"]),
+    ],
 }
 
 SERVER = {
@@ -122,13 +124,13 @@ SERVER = {
     "scripts": ["manage.py"],
     "data_files": [
         ("/etc/apache2/sites-available/", ["etc/lava-server.conf"]),
-        ("/etc/lava-dispatcher/certificates.d/", []),
         (
             "/etc/lava-server/",
             [
                 "etc/env.yaml",
-                "etc/lava-logs",
-                "etc/lava-master",
+                "etc/lava-celery-worker",
+                "etc/lava-publisher",
+                "etc/lava-scheduler",
                 "etc/lava-server-gunicorn",
             ],
         ),
@@ -141,18 +143,18 @@ SERVER = {
             "/etc/logrotate.d/",
             [
                 "etc/logrotate.d/django-log",
-                "etc/logrotate.d/lava-logs-log",
-                "etc/logrotate.d/lava-master-log",
+                "etc/logrotate.d/lava-celery-worker-log",
                 "etc/logrotate.d/lava-publisher-log",
+                "etc/logrotate.d/lava-scheduler-log",
                 "etc/logrotate.d/lava-server-gunicorn-log",
             ],
         ),
         (
             "/lib/systemd/system/",
             [
-                "etc/lava-logs.service",
-                "etc/lava-master.service",
+                "etc/lava-celery-worker.service",
                 "etc/lava-publisher.service",
+                "etc/lava-scheduler.service",
                 "etc/lava-server-gunicorn.service",
             ],
         ),

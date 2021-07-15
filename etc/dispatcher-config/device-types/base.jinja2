@@ -110,6 +110,10 @@ constants:
       - 'Ramdisk image is corrupt or invalid'
       - 'ERROR: Failed to allocate'
       - 'TFTP error: trying to overwrite reserved memory'
+      - 'Bad Linux RISCV Image magic!'
+      - 'Wrong Image Format for boot'
+      - 'ERROR: Did not find a cmdline Flattened Device Tree'
+      - 'ERROR: RD image overlaps OS image'
 {% endif %}
 {% if uboot_extra_error_message %}
       - '{{ uboot_extra_error_message }}'
@@ -353,6 +357,8 @@ timeouts:
       minutes: {{ action_timeout_musca_deploy | default(3) }}
     musca-boot:
       minutes: {{ action_timeout_musca_boot | default(1) }}
+    unmount-musca-usbmsd:
+      seconds: {{ action_timeout_unmount_musca_usbmsd | default(30) }}
     pdu-reboot:
       seconds: {{ action_timeout_pdu_reboot | default(30) }}
     reset-device:
@@ -371,5 +377,7 @@ timeouts:
     u-boot-interrupt:
       seconds: {{ connection_timeout_u_boot_interrupt | default(30) }}
     lava-test-shell:
+      seconds: {{ connection_timeout_feedback | default(10) }}
+    lava-docker-test-shell:
       seconds: {{ connection_timeout_feedback | default(10) }}
 {% endblock timeouts -%}

@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     "django_tables2",
     "linaro_django_xmlrpc",
     "rest_framework",
+    "rest_framework.authtoken",
     "django_filters",
     "rest_framework_filters",
     # Add contrib
@@ -159,6 +160,9 @@ HTTPS_XML_RPC = True
 # LAVA custom settings #
 ########################
 
+# Allow mismatch between master and worker versions
+ALLOW_VERSION_MISMATCH = False
+
 # LOG_SIZE_LIMIT in megabytes
 LOG_SIZE_LIMIT = 5
 
@@ -207,6 +211,10 @@ AUTH_LDAP_USER_SEARCH = None
 AUTH_LDAP_GROUP_SEARCH = None
 AUTH_LDAP_GROUP_TYPE = None
 
+# Gitlab support
+AUTH_GITLAB_URL = None
+AUTH_GITLAB_SCOPE = ["read_user"]
+
 # Debian SSO is of be default
 AUTH_DEBIAN_SSO = None
 
@@ -231,12 +239,6 @@ SENTRY_DSN = ""
 # Django debug toolbar
 USE_DEBUG_TOOLBAR = False
 
-# Encryption settings
-ENCRYPT = False
-MASTER_CERT = "/etc/lava-dispatcher/certificates.d/master.key_secret"
-MASTER_CERT_PUB = "/etc/lava-dispatcher/certificates.d/master.key"
-SLAVES_CERTS = "/etc/lava-dispatcher/certificates.d/"
-
 # Alternative logging database settings.
 MONGO_DB_URI = "mongodb://user:pass@localhost:27017/"
 MONGO_DB_DATABASE = "lava-logs"
@@ -247,6 +249,20 @@ ELASTICSEARCH_APIKEY = ""
 
 # Send notifications to worker admins after the master is upgraded.
 MASTER_UPGRADE_NOTIFY = False
+
+# Worker in the specific network will be allowed to auto register
+WORKER_AUTO_REGISTER = True
+WORKER_AUTO_REGISTER_NETMASK = ["127.0.0.0/8", "::1"]
+
+###################
+# Celerey setting #
+###################
+# Make celery optional.
+# Force task to be executed in the caller thread and not in a worker
+# When this is True, no need for either a broker or a worker, everything is local.
+# In order to use celery (with a worker), admins should set it to False.
+CELERY_TASK_ALWAYS_EAGER = True
+# CELERY_BROKER_URL = "redis://localhost:6379/0"
 
 ################
 # DRF settings #
@@ -268,6 +284,9 @@ REST_FRAMEWORK = {
         "rest_framework.authentication.SessionAuthentication",
         "lava_rest_app.authentication.LavaTokenAuthentication",
     ),
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticatedOrReadOnly"
+    ],
 }
 
 
@@ -294,6 +313,8 @@ def update(values):
     AUTH_LDAP_SERVER_URI = values.get("AUTH_LDAP_SERVER_URI")
     AUTH_LDAP_USER_SEARCH = values.get("AUTH_LDAP_USER_SEARCH")
     AUTH_DEBIAN_SSO = values.get("AUTH_DEBIAN_SSO")
+    AUTH_GITLAB_URL = values.get("AUTH_GITLAB_URL")
+    AUTH_GITLAB_SCOPE = values.get("AUTH_GITLAB_SCOPE")
     AUTHENTICATION_BACKENDS = values.get("AUTHENTICATION_BACKENDS")
     DISALLOWED_USER_AGENTS = values.get("DISALLOWED_USER_AGENTS")
     DJANGO_LOGFILE = values.get("DJANGO_LOGFILE")
@@ -322,6 +343,20 @@ def update(values):
     # and https://docs.djangoproject.com/en/1.9/ref/settings/#admins
     ADMINS = [tuple(v) for v in ADMINS]
     MANAGERS = [tuple(v) for v in MANAGERS]
+
+    # Gitlab authentication config
+    if AUTH_GITLAB_URL:
+        INSTALLED_APPS.append("allauth")
+        INSTALLED_APPS.append("allauth.account")
+        INSTALLED_APPS.append("allauth.socialaccount")
+        INSTALLED_APPS.append("allauth.socialaccount.providers.gitlab")
+
+        AUTHENTICATION_BACKENDS.append(
+            "allauth.account.auth_backends.AuthenticationBackend"
+        )
+        SOCIALACCOUNT_PROVIDERS = {
+            "gitlab": {"GITLAB_URL": AUTH_GITLAB_URL, "SCOPE": AUTH_GITLAB_SCOPE}
+        }
 
     # LDAP authentication config
     if AUTH_LDAP_SERVER_URI:

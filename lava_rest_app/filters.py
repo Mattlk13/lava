@@ -51,7 +51,7 @@ class GroupFilter(filters.FilterSet):
 
 
 class UserFilter(filters.FilterSet):
-    group = RelatedFilter(GroupFilter, name="group", queryset=Group.objects.all())
+    group = RelatedFilter(GroupFilter, name="groups", queryset=Group.objects.all())
 
     class Meta:
         model = User
@@ -125,7 +125,15 @@ class TagFilter(filters.FilterSet):
     class Meta:
         model = Tag
         fields = {
-            "name": ["exact", "in", "contains", "icontains", "startswith", "endswith"],
+            "name": [
+                "exact",
+                "iexact",
+                "in",
+                "contains",
+                "icontains",
+                "startswith",
+                "endswith",
+            ],
             "description": [
                 "exact",
                 "in",
@@ -197,8 +205,8 @@ class WorkerFilter(filters.FilterSet):
                 "endswith",
             ],
             "last_ping": ["exact", "lt", "gt"],
-            "state": ["exact"],
-            "health": ["exact"],
+            "state": ["exact", "iexact", "in"],
+            "health": ["exact", "iexact", "in"],
         }
 
 
@@ -322,8 +330,8 @@ class DeviceFilter(filters.FilterSet):
                 "startswith",
                 "endswith",
             ],
-            "state": ["exact"],
-            "health": ["exact"],
+            "state": ["exact", "iexact", "in"],
+            "health": ["exact", "iexact", "in"],
             "is_synced": ["exact"],
         }
 
@@ -346,7 +354,9 @@ class TestJobFilter(filters.FilterSet):
         JobFailureTagFilter, name="failure_tags", queryset=JobFailureTag.objects.all()
     )
     health = CharFilter(method="filter_health")
+    health__in = CharFilter(method="filter_health_in")
     state = CharFilter(method="filter_state")
+    state__in = CharFilter(method="filter_state_in")
 
     def filter_health(self, queryset, name, value):
         try:
@@ -358,6 +368,16 @@ class TestJobFilter(filters.FilterSet):
             )
         return queryset.filter(health=value)
 
+    def filter_health_in(self, queryset, name, value):
+        try:
+            value = [TestJob.HEALTH_REVERSE[health] for health in value.split(",")]
+        except KeyError:
+            raise ValidationError(
+                "Select a valid choice. %s is not one of the available choices: %s"
+                % (value, list(zip(*TestJob.HEALTH_CHOICES))[1])
+            )
+        return queryset.filter(health__in=value)
+
     def filter_state(self, queryset, name, value):
         try:
             value = TestJob.STATE_REVERSE[value]
@@ -368,17 +388,34 @@ class TestJobFilter(filters.FilterSet):
             )
         return queryset.filter(state=value)
 
+    def filter_state_in(self, queryset, name, value):
+        try:
+            value = [TestJob.STATE_REVERSE[state] for state in value.split(",")]
+        except KeyError:
+            raise ValidationError(
+                "Select a valid choice. %s is not one of the available choices: %s"
+                % (value, list(zip(*TestJob.STATE_CHOICES))[1])
+            )
+        return queryset.filter(state__in=value)
+
     class Meta:
         model = TestJob
         fields = {
-            "id": ["exact", "lt", "gt"],
-            "submit_time": ["exact", "lt", "gt"],
-            "start_time": ["exact", "lt", "gt"],
-            "end_time": ["exact", "lt", "gt"],
+            "id": ["exact", "lt", "gt", "in"],
+            "submit_time": ["exact", "lt", "gt", "isnull"],
+            "start_time": ["exact", "lt", "gt", "isnull"],
+            "end_time": ["exact", "lt", "gt", "isnull"],
             "health_check": ["exact"],
-            "target_group": ["exact", "in", "contains", "icontains", "startswith"],
-            "state": ["exact"],
-            "health": ["exact"],
+            "target_group": [
+                "exact",
+                "iexact",
+                "in",
+                "contains",
+                "icontains",
+                "startswith",
+            ],
+            "state": ["exact", "iexact", "in"],
+            "health": ["exact", "iexact", "in"],
             "priority": ["exact", "in", "lt", "lte", "gt", "gte"],
             "description": [
                 "exact",
@@ -469,7 +506,7 @@ class TestCaseFilter(filters.FilterSet):
         model = TestCase
         exclude = {}
         fields = {
-            "id": ["exact", "lt", "gt"],
+            "id": ["exact", "lt", "gt", "in"],
             "start_log_line": ["exact", "lt", "lte", "gt", "gte"],
             "end_log_line": ["exact", "lt", "lte", "gt", "gte"],
             "logged": ["exact", "lt", "lte", "gt", "gte"],
@@ -489,7 +526,7 @@ class TestCaseFilter(filters.FilterSet):
 
 class GroupDeviceTypePermissionFilter(filters.FilterSet):
     device_type = RelatedFilter(
-        DeviceTypeFilter, name="device_type", queryset=DeviceType.objects.all()
+        DeviceTypeFilter, name="devicetype", queryset=DeviceType.objects.all()
     )
     group = RelatedFilter(GroupFilter, name="group", queryset=Group.objects.all())
     permission = RelatedFilter(

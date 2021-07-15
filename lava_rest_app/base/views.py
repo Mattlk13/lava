@@ -149,6 +149,11 @@ class TestJobViewSet(viewsets.ModelViewSet):
             .visible_by_user(self.request.user)
         )
 
+    def get_permissions(self):
+        if self.action in ["update", "destroy", "partial_update"]:
+            self.permission_classes = [IsSuperUser]
+        return super().get_permissions()
+
     @detail_route(methods=["get"], suffix="junit")
     def junit(self, request, **kwargs):
         suites = []
@@ -272,7 +277,9 @@ class TestJobViewSet(viewsets.ModelViewSet):
         return paginator.get_paginated_response(serializer.data)
 
     def create(self, request, **kwargs):
-        serializer = serializers.TestJobSerializer(data=request.data)
+        serializer = serializers.TestJobSerializer(
+            data=request.data, context={"request": request}
+        )
 
         serializer.is_valid(raise_exception=True)
         definition = serializer.validated_data["definition"]
@@ -382,6 +389,11 @@ class DeviceViewSet(viewsets.ReadOnlyModelViewSet):
         if not self.request.query_params.get("all", False):
             query = query.exclude(health=Device.HEALTH_RETIRED)
         return query
+
+    def get_permissions(self):
+        if self.action in ["create", "update", "destroy", "partial_update"]:
+            self.permission_classes = [IsSuperUser]
+        return super().get_permissions()
 
 
 class WorkerViewSet(viewsets.ReadOnlyModelViewSet):

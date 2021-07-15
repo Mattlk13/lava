@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: Debian LAVA team <pkg-linaro-lava-devel@lists.alioth.debian.org>
 Uploaders: Antonio Terceiro <antonio.terceiro@linaro.org>,
            Remi Duraffort <remi.duraffort@linaro.org>
-Build-Depends: debhelper (>= 9.20160709),
+Build-Depends: debhelper-compat (= 12),
                dh-python,
                libjs-bootstrap,
                libjs-excanvas,
@@ -39,7 +39,7 @@ Recommends: bridge-utils,
             dfu-util,
             git,
             libguestfs-tools (>= 1.32.7),
-            lxc (>= 1:2.0.7),
+            lxc (>= 1:2.0.7) | lava-lxc-mocker,
             nfs-kernel-server,
             ntp,
             openbsd-inetd,
@@ -77,6 +77,8 @@ Package: lava-dispatcher-host
 Architecture: all
 Depends: lava-common (= ${binary:Version}),
          python3,
+         python3-requests,
+         python3-pyudev,
          ${misc:Depends},
          ${python3:Depends}
 Multi-Arch: foreign
@@ -97,9 +99,7 @@ Package: lava-server
 Architecture: all
 Pre-Depends: debconf | debconf-2.0
 Depends: adduser,
-         apache2,
          gunicorn (>= 19.9.0-4) | gunicorn3,
-         iproute2,
          lava-common (= ${binary:Version}),
          lava-server-doc (= ${binary:Version}),
          libjs-bootstrap,
@@ -107,17 +107,19 @@ Depends: adduser,
          libjs-jquery,
          libjs-jquery-flot (>=0.8.2),
          libjs-jquery-typeahead,
-         postgresql,
          postgresql-client,
-         postgresql-common,
          systemd-sysv,
          ${misc:Depends},
          ${python3:Depends}
-Recommends: lava-coordinator (= ${binary:Version}),
+Recommends: apache2,
+            lava-coordinator (= ${binary:Version}),
             lava-dispatcher (= ${binary:Version}),
             ntp,
-            openssh-client
-Suggests: lavacli
+            openssh-client,
+            postgresql,
+            postgresql-common
+Suggests: lavacli,
+          rabbitmq-server | redis-server,
 Description: Linaro Automated Validation Architecture server
  LAVA is a continuous integration system for deploying operating
  systems onto physical and virtual hardware for running tests.
@@ -163,7 +165,6 @@ Depends: bridge-utils,
          lava-server (= ${binary:Version}),
          lava-server-doc (= ${binary:Version}),
          lavacli,
-         lxc (>= 1:2.0.6),
          ntp | ntpdate | chrony,
          openssh-client,
          rsync,
@@ -192,7 +193,6 @@ Package: lava-lxc-mocker
 Architecture: all
 Depends: ${misc:Depends}
 Conflicts: lxc
-Provides: lxc
 Replaces: lxc
 Description: Linaro Automated Validation Architecture LXC Mocker
  LAVA is a continuous integration system for deploying operating
@@ -263,7 +263,7 @@ Depends: build-essential,
          ${misc:Depends},
          ${python3:Depends}
 Recommends: img2simg,
-            lxc,
+            lxc | lava-lxc-mocker,
             nfs-kernel-server,
             python3-django-extensions,
             python3-pydot,

@@ -2,6 +2,8 @@
 
 
 {% set fastboot_options = fastboot_options|default(['-i', '0x15A2']) %}
+{% set fastboot_boot_uboot = "
+" %}
 {% set fastboot_sequence = fastboot_sequence|default(['reboot']) %}
 {% set fastboot_deploy_uboot_commands = fastboot_deploy_uboot_commands|default(['fastboot 0']) %}
 {% set flash_cmds_order = flash_cmds_order|default(['bootloader', 'bootloader_a', 'bootloader_b', 'bootloader0',
@@ -22,7 +24,7 @@
 {% set base_kernel_args = base_kernel_args|default('') %}
 {% set booti_kernel_addr = booti_kernel_addr | default('0x80800000') %}
 {% set booti_tee_addr = booti_tee_addr | default('0x84000000') %}
-{% set booti_ramdisk_addr = booti_ramdisk_addr | default('0x84000000') %}
+{% set booti_ramdisk_addr = booti_ramdisk_addr | default('0x86800000') %}
 {% set booti_dtb_addr = booti_dtb_addr | default('0x83000000') %}
 {% set bootz_kernel_addr = booti_kernel_addr %}
 {% set bootz_tee_addr = booti_tee_addr %}
@@ -39,3 +41,4 @@
 {% set action_timeout_power_off = action_timeout_power_off | default(10) %}
 {% set action_timeout_download_retry = action_timeout_download_retry | default(15) %}
 {% set action_timeout_http_download = action_timeout_http_download | default(15) %}
+{% set shutdown_message = shutdown_message|default("Restarting system") %}

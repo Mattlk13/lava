@@ -39,9 +39,11 @@ from lava_scheduler_app.api.workers import SchedulerWorkersAPI
 
 from lava_server.api import LavaMapper
 from lava_server.views import (
+    delete_remote_auth,
     index,
     me,
     update_irc_settings,
+    update_remote_auth,
     update_table_length_setting,
 )
 
@@ -65,6 +67,25 @@ mapper.register(SchedulerJobsAPI, "scheduler.jobs")
 mapper.register(SchedulerTagsAPI, "scheduler.tags")
 mapper.register(SchedulerWorkersAPI, "scheduler.workers")
 
+# Auth backends
+auth_urls = [
+    url(
+        r"^{mount_point}accounts/".format(mount_point=settings.MOUNT_POINT),
+        include("django.contrib.auth.urls"),
+    )
+]
+
+if (
+    "allauth.account.auth_backends.AuthenticationBackend"
+    in settings.AUTHENTICATION_BACKENDS
+):
+    auth_urls.insert(
+        0,
+        url(
+            r"^{mount_point}accounts/".format(mount_point=settings.MOUNT_POINT),
+            include("allauth.urls"),
+        ),
+    )
 
 # Root URL patterns
 urlpatterns = [
@@ -89,16 +110,25 @@ urlpatterns = [
         name="lava.update_irc_settings",
     ),
     url(
+        r"^{mount_point}update-remote-auth/$".format(mount_point=settings.MOUNT_POINT),
+        update_remote_auth,
+        name="lava.update_remote_auth",
+    ),
+    url(
+        r"^{mount_point}delete-remote-auth/(?P<pk>[0-9]+|[0-9]+\.[0-9]+)/$".format(
+            mount_point=settings.MOUNT_POINT
+        ),
+        delete_remote_auth,
+        name="lava.delete_remote_auth",
+    ),
+    url(
         r"^{mount_point}update-table-length-setting/$".format(
             mount_point=settings.MOUNT_POINT
         ),
         update_table_length_setting,
         name="lava.update_table_length_setting",
     ),
-    url(
-        r"^{mount_point}accounts/".format(mount_point=settings.MOUNT_POINT),
-        include("django.contrib.auth.urls"),
-    ),
+    *auth_urls,
     url(r"^admin/jsi18n", JavaScriptCatalog.as_view()),
     url(
         r"^{mount_point}admin/".format(mount_point=settings.MOUNT_POINT),

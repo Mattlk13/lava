@@ -148,6 +148,7 @@ def action():
         Optional("timeout"): timeout(),
         Optional("repeat"): Range(min=1),  # TODO: where to put it?
         Optional("failure_retry"): Range(min=1),  # TODO: where to put it?
+        Optional("failure_retry_interval"): Range(min=1),
     }
 
 
@@ -156,6 +157,7 @@ def notify():
         Required("url"): str,
         Optional("method"): Any("GET", "POST"),
         Optional("token"): str,
+        Optional("header"): str,
         Optional("dataset"): Any("minimal", "logs", "results", "all"),
         Optional("content-type"): Any("json", "urlencoded"),
     }
@@ -165,7 +167,8 @@ def notify():
             {
                 Required("status"): Any(
                     "finished", "running", "complete", "canceled", "incomplete"
-                )
+                ),
+                Optional("dependency_query"): str,
             },
             {
                 Required("status"): Any("complete", "incomplete"),
@@ -202,7 +205,6 @@ def extra_checks(data):
     check_multinode_or_environment(data)
     check_multinode_roles(data)
     check_namespace(data)
-    check_secrets_visibility(data)
 
 
 def check_job_timeouts(data):
@@ -280,11 +282,6 @@ def check_namespace(data):
 
     if actions_with_ns and (len(data["actions"]) != actions_with_ns):
         raise Invalid("When using namespaces, every action should have a namespace")
-
-
-def check_secrets_visibility(data):
-    if "secrets" in data and data["visibility"] == "public":
-        raise Invalid('When using "secrets", visibility shouldn\'t be "public"')
 
 
 def job(extra_context_variables=[]):
@@ -375,10 +372,15 @@ def job(extra_context_variables=[]):
 
 
 docker_image_format = Match(
-    "^[a-z0-9]+[a-z0-9._/-]*[a-z0-9]+(:[a-zA-Z0-9_]+[a-zA-Z0-9._-]*)?$",
+    "^[a-z0-9]+[a-z0-9._/:-]*[a-z0-9]+(:[a-zA-Z0-9_]+[a-zA-Z0-9._-]*)?$",
     msg="Invalid docker image name",
 )
 
 
 def docker(image_key="image"):
-    return {Required(image_key): docker_image_format, Optional("local"): bool}
+    return {
+        Required(image_key): docker_image_format,
+        Optional("local"): bool,
+        Optional("container_name"): str,
+        Optional("network_from"): "str",
+    }

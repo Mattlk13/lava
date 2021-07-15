@@ -15,29 +15,35 @@
 
 import glob
 import logging
+import logging.handlers
 import os
+import stat
 import subprocess
+import pyudev
 
 from lava_common.compat import yaml_dump, yaml_load
 from lava_common.constants import DISPATCHER_DOWNLOAD_DIR as JOBS_DIR
 from lava_common.exceptions import InfrastructureError
+
+context = pyudev.Context()
+
+logger = logging.getLogger("lava-dispatcher-host")
+logger.addHandler(logging.handlers.SysLogHandler(address="/dev/log"))
+logger.setLevel(logging.INFO)
 
 
 def get_mapping_path(job_id):
     return os.path.join(JOBS_DIR, job_id, "usbmap.yaml")
 
 
-def add_device_container_mapping(
-    job_id, device_info, container, container_type="lxc", logging_info={}
-):
+def add_device_container_mapping(job_id, device_info, container, container_type="lxc"):
     validate_device_info(device_info)
     item = {
         "device_info": device_info,
         "container": container,
         "container_type": container_type,
-        "logging_info": logging_info,
+        "job_id": job_id,
     }
-    logger = logging.getLogger("dispatcher")
     mapping_path = get_mapping_path(job_id)
     data = load_mapping_data(mapping_path)
 
@@ -48,11 +54,6 @@ def add_device_container_mapping(
     os.makedirs(os.path.dirname(mapping_path), exist_ok=True)
     with open(mapping_path, "w") as f:
         f.write(yaml_dump(newdata))
-        logger.info(
-            "Added mapping for {device_info} to {container_type} container {container}".format(
-                **item
-            )
-        )
 
 
 def remove_device_container_mappings(job_id):
@@ -68,13 +69,10 @@ def validate_device_info(device_info):
         )
 
 
-def share_device_with_container(options, setup_logger=None):
+def share_device_with_container(options):
     data = find_mapping(options)
     if not data:
         return
-    if setup_logger:
-        setup_logger(data["logging_info"])
-    logger = logging.getLogger("dispatcher")
     container = data["container"]
     device = options.device
     if not device.startswith("/dev/"):
@@ -126,35 +124,113 @@ def match_mapping(device_info, options):
 
 
 def log_sharing_device(device, container_type, container):
-    logger = logging.getLogger("dispatcher")
     logger.info(f"Sharing {device} with {container_type} container {container}")
 
 
 def share_device_with_container_lxc(container, node):
-    log_sharing_device(node, "lxc", container)
+    device = pyudev.Devices.from_device_file(context, node)
+    pass_device_into_container_lxc(container, node, device.device_links)
+    for child in device.children:
+        if child.device_node:
+            pass_device_into_container_lxc(child.device_node, child.device_links)
+
+
+def pass_device_into_container_lxc(container, node, links=[]):
+    try:
+        nodeinfo = os.stat(node)
+        uid = nodeinfo.st_uid
+        gid = nodeinfo.st_gid
+        mode = "%o" % (0o777 & nodeinfo.st_mode)
+    except FileNotFoundError as exc:
+        logger.warning(
+            f"Cannot share {node} with lxc container {container}: {exc.filename} not found"
+        )
+        return
     subprocess.check_call(["lxc-device", "-n", container, "add", node])
+    log_sharing_device(node, "lxc", container)
+
+    set_perms = f"chown {uid}:{gid} {node} && chmod {mode} {node}"
+    subprocess.check_call(["lxc-attach", "-n", container, "--", "sh", "-c", set_perms])
+
+    for link in links:
+        create_link = f"mkdir -p {os.path.dirname(link)} && ln -f -s {node} {link}"
+        subprocess.check_call(
+            ["lxc-attach", "-n", container, "--", "sh", "-c", create_link]
+        )
 
 
-def share_device_with_container_docker(container, node):
-    log_sharing_device(node, "docker", container)
-    container_id = subprocess.check_output(
-        ["docker", "inspect", "--format={{.ID}}", container], text=True
-    ).strip()
-    nodeinfo = os.stat(node)
-    major = os.major(nodeinfo.st_rdev)
-    minor = os.minor(nodeinfo.st_rdev)
-    with open(
-        "/sys/fs/cgroup/devices/docker/%s/devices.allow" % container_id, "w"
-    ) as allow:
-        allow.write("a %d:%d rwm\n" % (major, minor))
-    subprocess.check_call(
+def pass_device_into_container_docker(container, container_id, node, links=[]):
+    try:
+        nodeinfo = os.stat(node)
+        major = os.major(nodeinfo.st_rdev)
+        minor = os.minor(nodeinfo.st_rdev)
+        nodetype = "b" if stat.S_ISBLK(nodeinfo.st_mode) else "c"
+
+        devices_allow_file = (
+            "/sys/fs/cgroup/devices/docker/%s/devices.allow" % container_id
+        )
+        if not os.path.exists(devices_allow_file):
+            devices_allow_file = (
+                "/sys/fs/cgroup/devices/system.slice/docker-%s.scope/devices.allow"
+                % container_id
+            )
+
+        with open(devices_allow_file, "w") as allow:
+            allow.write("a %d:%d rwm\n" % (major, minor))
+    except FileNotFoundError as exc:
+        logger.warning(
+            f"Cannot share {node} with docker container {container}: {exc.filename} not found"
+        )
+        return
+
+    # it's ok to fail; container might have already exited at this point.
+    nodedir = os.path.dirname(node)
+    uid = nodeinfo.st_uid
+    gid = nodeinfo.st_gid
+    mode = "%o" % (0o777 & nodeinfo.st_mode)
+    subprocess.call(
         [
             "docker",
             "exec",
             container,
             "sh",
             "-c",
-            "mkdir -p %s && mknod %s c %d %d || true"
-            % (os.path.dirname(node), node, major, minor),
+            f"mkdir -p {nodedir} && mknod {node} {nodetype} {major} {minor} && chown {uid}:{gid} {node} && chmod {mode} {node}",
         ]
     )
+
+    for link in links:
+        subprocess.call(
+            [
+                "docker",
+                "exec",
+                container,
+                "sh",
+                "-c",
+                f"mkdir -p {os.path.dirname(link)} && ln -f -s {node} {link}",
+            ]
+        )
+
+
+def share_device_with_container_docker(container, node):
+    log_sharing_device(node, "docker", container)
+    try:
+        container_id = subprocess.check_output(
+            ["docker", "inspect", "--format={{.ID}}", container], text=True
+        ).strip()
+    except subprocess.CalledProcessError:
+        logger.warning(
+            f"Cannot share {node} with docker container {container}: container not found"
+        )
+        return
+
+    device = pyudev.Devices.from_device_file(context, node)
+    pass_device_into_container_docker(
+        container, container_id, node, device.device_links
+    )
+
+    for child in device.children:
+        if child.device_node:
+            pass_device_into_container_docker(
+                container, container_id, child.device_node, child.device_links
+            )

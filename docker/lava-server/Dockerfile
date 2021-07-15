@@ -33,7 +33,6 @@ RUN --mount=type=bind,target=/app \
     # Create empty files
     touch /install/var/log/lava-server/django.log && \
     # chown/chmod every files
-    chown -R lavaserver:lavaserver /install/etc/lava-dispatcher/certificates.d/ && \
     chown -R lavaserver:lavaserver /install/etc/lava-server/dispatcher-config/ && \
     chown -R lavaserver:lavaserver /install/etc/lava-server/dispatcher.d/ && \
     chown -R lavaserver:lavaserver /install/etc/lava-server/settings.d/ && \
@@ -60,14 +59,15 @@ RUN mkdir /install/root/entrypoint.d
 FROM $base_image as install
 COPY --from=build /install /
 
-EXPOSE 80 3079 5500 5555 5556
+EXPOSE 80 3079 5500 8000 8001
 
 # Activate the apache2 configuration and modules
 # TODO: remove apache2 and use only gunicorn
 RUN a2dissite 000-default && \
     a2ensite lava-server && \
     a2enmod proxy_http && \
-    a2enmod expires && \
-    a2enmod headers
+    a2enmod proxy_wstunnel && \
+    a2enmod rewrite && \
+    a2enmod ssl
 
 ENTRYPOINT ["/root/entrypoint.sh"]

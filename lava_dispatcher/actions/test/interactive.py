@@ -117,6 +117,10 @@ class TestInteractiveAction(Action):
         # Loop on all scripts
         for script in self.parameters["interactive"]:
             start = time.time()
+
+            # Set the connection prompts
+            connection.prompt_str = script["prompts"]
+
             result = {
                 "definition": "lava",
                 "case": "%s_%s" % (self.parameters["stage"], script["name"]),
@@ -130,9 +134,6 @@ class TestInteractiveAction(Action):
                 # Log the current script result (even in case of error)
                 result["duration"] = "%.02f" % (time.time() - start)
                 self.logger.results(result)
-
-            # Set the connection prompts
-            connection.prompt_str = script["prompts"]
 
         return connection
 
@@ -161,6 +162,7 @@ class TestInteractiveAction(Action):
                 self.logger.info("send result: %r", res)
                 continue
             elif "lava-wait" in cmd:
+                self.multinode_proto.set_timeout(self.timeout.duration)
                 res = self.multinode_proto.request_wait(cmd["lava-wait"])
                 self.logger.info("wait result: %r", res)
                 res = json.loads(res)
@@ -181,6 +183,7 @@ class TestInteractiveAction(Action):
                             "lava-wait-all 2nd param must be role=<rolename>, got: %s"
                             % key
                         )
+                self.multinode_proto.set_timeout(self.timeout.duration)
                 res = self.multinode_proto.request_wait_all(parts[0], role)
                 self.logger.info("wait-all result: %r", res)
                 res = json.loads(res)
@@ -192,6 +195,7 @@ class TestInteractiveAction(Action):
                 multinode2subst(res["message"])
                 continue
             elif "lava-sync" in cmd:
+                self.multinode_proto.set_timeout(self.timeout.duration)
                 res = self.multinode_proto.request_sync(cmd["lava-sync"])
                 self.logger.info("sync result: %r", res)
                 continue

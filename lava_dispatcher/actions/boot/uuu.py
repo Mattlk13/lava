@@ -21,16 +21,16 @@
 
 # List just the subclasses supported for this base strategy
 # imported by the parser to populate the list of subclasses.
+
 import time
 from lava_dispatcher.action import Pipeline, Action
 from lava_common.exceptions import ConfigurationError, JobError
-from lava_dispatcher.actions.boot.bootloader import BootBootloaderRetry
+from lava_dispatcher.actions.boot.bootloader import BootBootloaderAction
 from lava_dispatcher.logical import Boot, RetryAction
 from lava_dispatcher.actions.boot import BootloaderCommandOverlay
 
 from lava_dispatcher.connections.serial import ConnectDevice, DisconnectDevice
 from lava_dispatcher.power import ResetDevice
-from lava_dispatcher.utils.shell import which
 from lava_dispatcher.utils.strings import safe_dict_format
 from lava_dispatcher.utils.uuu import OptionalContainerUuuAction
 
@@ -40,9 +40,10 @@ class CheckSerialDownloadMode(OptionalContainerUuuAction):
     description = "Store in 'otg_availability_check' namespace_data if USB serial download mode available"
     summary = "Store in 'otg_availability_check' namespace_data if USB serial download mode available"
 
-    def __init__(self, parent_pipeline):
-        super().__init__()
-        self.uuu = which("uuu")
+    def populate(self, parameters):
+        self.parameters = parameters
+        self.uuu = self.which("uuu")
+        self.linux_timeout = self.which("timeout")
 
     def check_board_availability(self):
         """
@@ -63,7 +64,7 @@ class CheckSerialDownloadMode(OptionalContainerUuuAction):
         time.sleep(5)
 
         cmd = "{} --preserve-status 10 {} -m {} {}".format(
-            which("timeout"), self.uuu, usb_otg_path, boot
+            self.linux_timeout, self.uuu, usb_otg_path, boot
         )
 
         self.maybe_copy_to_container(boot)
@@ -72,7 +73,7 @@ class CheckSerialDownloadMode(OptionalContainerUuuAction):
         return self.run_uuu(cmd.split(" "), allow_fail=True) == 0
 
     def run(self, connection, max_end_time):
-        super().run(connection, max_end_time)
+        connection = super().run(connection, max_end_time)
         board_available = self.check_board_availability()
 
         if not board_available:
@@ -87,6 +88,8 @@ class CheckSerialDownloadMode(OptionalContainerUuuAction):
             self.set_namespace_data(
                 action="boot", label="uuu", key="otg_availability_check", value=True
             )
+
+        return connection
 
 
 class UUUBoot(Boot):
@@ -105,7 +108,7 @@ class UUUBoot(Boot):
 
     @classmethod
     def action(cls):
-        return UUUBootAction()
+        return UUUBootRetryAction()
 
     @classmethod
     def accepts(cls, device, parameters):
@@ -127,7 +130,7 @@ class UUUBoot(Boot):
         return False, '"uuu" was not in the device configuration boot methods'
 
 
-class BootBootloaderCorruptBootMediaAction(RetryAction):
+class BootBootloaderCorruptBootMediaAction(Action):
 
     name = "boot-corrupt-boot-media"
     description = "boot using 'bootloader' method and corrupt boot media"
@@ -153,7 +156,7 @@ class BootBootloaderCorruptBootMediaAction(RetryAction):
                 method=u_boot_params["bootloader"], commands=u_boot_params["commands"]
             )
         )
-        self.pipeline.add_action(BootBootloaderRetry())
+        self.pipeline.add_action(BootBootloaderAction())
         self.pipeline.add_action(DisconnectDevice())
 
     def run(self, connection, max_end_time):
@@ -163,45 +166,38 @@ class BootBootloaderCorruptBootMediaAction(RetryAction):
         if otg_available:
             return connection
         else:
-            super().run(connection, max_end_time)
+            return super().run(connection, max_end_time)
 
 
-class UUUBootAction(Action):
+class UUUBootRetryAction(RetryAction):
     """
     Wraps the Retry Action to allow for actions which precede
     the reset, e.g. Connect.
     """
 
-    name = "uuu-boot"
+    name = "uuu-boot-retry"
     description = "Boot the board using uboot and perform uuu commands"
     summary = "Pass uuu commands"
 
     def populate(self, parameters):
         self.pipeline = Pipeline(parent=self, job=self.job, parameters=parameters)
         self.pipeline.add_action(ResetDevice())
-        self.pipeline.add_action(CheckSerialDownloadMode(parent_pipeline=self.pipeline))
+        self.pipeline.add_action(CheckSerialDownloadMode())
         self.pipeline.add_action(BootBootloaderCorruptBootMediaAction())
         self.pipeline.add_action(ResetDevice())
-        self.pipeline.add_action(UUUBootRetry(), parameters=parameters)
+        self.pipeline.add_action(UUUBootAction(), parameters=parameters)
         self.pipeline.add_action(ConnectDevice())
 
 
-class UUUBootRetry(RetryAction, OptionalContainerUuuAction):
+class UUUBootAction(OptionalContainerUuuAction):
 
-    name = "uuu-retry"
-    description = "interactive uuu retry action"
-    summary = "uuu commands with retry"
-
-    def __init__(self):
-        super().__init__()
-        self.method_params = None
-        self.usb_mass_device = None
-        self.uuu = which("uuu")
+    name = "uuu-boot"
+    description = "interactive uuu action"
+    summary = "uuu commands"
 
     def populate(self, parameters):
-        self.usb_mass_device = self.parameters.get("uboot_mass_storage_device")
-
-        self.pipeline = Pipeline(parent=self, job=self.job, parameters=parameters)
+        self.parameters = parameters
+        self.uuu = self.which("uuu")
 
     def validate(self):
         super().validate()
@@ -210,6 +206,7 @@ class UUUBootRetry(RetryAction, OptionalContainerUuuAction):
         )
 
     def run(self, connection, max_end_time):
+        connection = super().run(connection, max_end_time)
         usb_otg_path = self.job.device["actions"]["boot"]["methods"]["uuu"]["options"][
             "usb_otg_path"
         ]
@@ -258,4 +255,4 @@ class UUUBootRetry(RetryAction, OptionalContainerUuuAction):
                 error_msg="Fail UUUBootAction on cmd : {}".format(cmd),
             )
 
-        return None
+        return connection

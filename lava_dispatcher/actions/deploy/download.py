@@ -363,7 +363,10 @@ class DownloadHandler(Action):
             try:
                 with open(self.fname, "wb") as dwnld_file:
                     proc = subprocess.Popen(  # nosec - internal.
-                        [decompress_command], stdin=subprocess.PIPE, stdout=dwnld_file
+                        [decompress_command],
+                        stdin=subprocess.PIPE,
+                        stdout=dwnld_file,
+                        stderr=subprocess.PIPE,
                     )
             except OSError as exc:
                 msg = "Unable to open %s: %s" % (self.fname, exc.strerror)
@@ -376,7 +379,9 @@ class DownloadHandler(Action):
                     try:
                         pipe.write(buff)
                     except BrokenPipeError as exc:
-                        error_message = str(exc)
+                        error_message = (
+                            str(exc) + ": " + proc.stderr.read().decode("utf-8").strip()
+                        )
                         self.logger.exception(error_message)
                         msg = (
                             "Make sure the 'compression' is corresponding "
@@ -566,10 +571,13 @@ class HttpDownloadAction(DownloadHandler):
                     self.errors = "Invalid http_url_format_string: '%s'" % str(exc)
                     return
 
+            headers = {"Accept-Encoding": ""}
+            if self.params and "headers" in self.params:
+                headers.update(self.params["headers"])
             self.logger.debug("Validating that %s exists", self.url.geturl())
             # Force the non-use of Accept-Encoding: gzip, this will permit to know the final size
             res = requests_retry().head(
-                self.url.geturl(), allow_redirects=True, headers={"Accept-Encoding": ""}
+                self.url.geturl(), allow_redirects=True, headers=headers
             )
             if res.status_code != requests.codes.OK:
                 # try using (the slower) get for services with broken redirect support
@@ -580,7 +588,7 @@ class HttpDownloadAction(DownloadHandler):
                     self.url.geturl(),
                     allow_redirects=True,
                     stream=True,
-                    headers={"Accept-Encoding": ""},
+                    headers=headers,
                 )
                 if res.status_code != requests.codes.OK:
                     self.errors = "Resource unavailable at '%s' (%d)" % (
@@ -605,8 +613,11 @@ class HttpDownloadAction(DownloadHandler):
         try:
             # FIXME: When requests 3.0 is released, use the enforce_content_length
             # parameter to raise an exception the file is not fully downloaded
+            headers = None
+            if self.params and "headers" in self.params:
+                headers = self.params["headers"]
             res = requests_retry().get(
-                self.url.geturl(), allow_redirects=True, stream=True
+                self.url.geturl(), allow_redirects=True, stream=True, headers=headers
             )
             if res.status_code != requests.codes.OK:
                 # This is an Infrastructure error because the validate function
@@ -780,6 +791,8 @@ class PreDownloadedAction(Action):
         self.set_namespace_data(
             action="download-action", label=self.key, key="file", value=str(dest)
         )
+        if "lava-xnbd" in self.parameters and str(self.key) == "nbdroot":
+            self.parameters["lava-xnbd"]["nbdroot"] = str(dest)
 
         return connection
 

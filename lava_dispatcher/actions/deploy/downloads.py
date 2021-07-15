@@ -65,7 +65,7 @@ class DownloadsAction(DownloadAction):
                     image,
                     download_dir,
                     params=parameters["images"][image],
-                    uniquify=False,
+                    uniquify=parameters.get("uniquify", False),
                 )
             )
 
@@ -90,21 +90,14 @@ class PostprocessWithDocker(Action):
     def __init__(self, path):
         super().__init__()
         self.path = Path(path)
-        self.image = None
-        self.local = False
         self.steps = []
 
     def populate(self, parameters):
-        parameters = parameters.get("postprocess", {}).get("docker", {})
-        self.image = parameters.get("image")
-        self.local = parameters.get("local")
-        self.steps = parameters.get("steps", [])
+        self.docker_parameters = parameters.get("postprocess", {}).get("docker", {})
+        self.steps = self.docker_parameters.get("steps", [])
 
     def validate(self):
         res = True
-        if not self.image:
-            self.errors.append("docker image name missing")
-            res = False
         if not self.steps:
             self.errors.append("postprocessing steps missing")
             res = False
@@ -113,19 +106,26 @@ class PostprocessWithDocker(Action):
     def run(self, connection, max_end_time):
         job_id = self.job.job_id
 
-        script = ["#!/bin/sh", "exec 2>&1", "set -ex"] + self.steps
+        script = ["#!/bin/sh", "exec 2>&1", "set -ex"]
+
+        # Export data generated during run of the Pipeline like NFS settings
+        if self.job.device:
+            for key in self.job.device["dynamic_data"]:
+                script.append(
+                    "export %s='%s'" % (key, self.job.device["dynamic_data"][key])
+                )
+
+        script = script + self.steps
         script = "\n".join(script) + "\n"
 
         scriptfile = self.path / "postprocess.sh"
         scriptfile.write_text(script)
         scriptfile.chmod(0o755)
 
-        docker = DockerRun(self.image)
-        docker.local(self.local)
+        docker = DockerRun.from_parameters(self.docker_parameters, self.job)
         docker.add_device("/dev/kvm", skip_missing=True)
         docker.bind_mount(self.path, LAVA_DOWNLOADS)
 
-        docker.hostname("lava")
         docker.workdir(LAVA_DOWNLOADS)
 
         docker.run(f"{LAVA_DOWNLOADS}/postprocess.sh", action=self)

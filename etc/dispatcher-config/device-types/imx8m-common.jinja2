@@ -5,6 +5,8 @@
 {% set uboot_ums_flash = uboot_ums_flash|default(False) %}
 {% set ums_command = ums_command|default('ums 0 mmc 1') %}
 {% set fastboot_options = fastboot_options|default(['-i', '0x0525']) %}
+{% set fastboot_boot_uboot = "
+" %}
 {% set fastboot_sequence = fastboot_sequence|default(['reboot']) %}
 {% set adb_serial_number = adb_serial_number|default(fastboot_serial_number) %}
 {% set fastboot_deploy_uboot_commands = fastboot_deploy_uboot_commands|default(['fastboot 0']) %}
@@ -28,3 +30,5 @@
 {% set usb_device_id = usb_device_id|default('') %}
 {% set uboot_extra_error_message = uboot_extra_error_message|default('Invalid partition') %}
 {% set extra_nfsroot_args = extra_nfsroot_args|default(",v3") %}
+{% set base_high_limits = base_high_limits|default(false) %}
+{% set shutdown_message = shutdown_message|default("Restarting system") %}

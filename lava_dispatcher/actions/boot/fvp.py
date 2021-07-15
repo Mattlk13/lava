@@ -19,12 +19,15 @@
 # with this program; if not, see <http://www.gnu.org/licenses>.
 
 import os
+import re
+import shlex
 import time
 
 from lava_common.exceptions import JobError
 from lava_dispatcher.action import Pipeline, Action
 from lava_dispatcher.logical import Boot, RetryAction
-from lava_dispatcher.actions.boot import BootHasMixin, AutoLoginAction
+from lava_dispatcher.power import ReadFeedback
+from lava_dispatcher.actions.boot import BootHasMixin, AutoLoginAction, OverlayUnpack
 from lava_dispatcher.shell import ExpectShellSession, ShellCommand, ShellSession
 
 
@@ -56,9 +59,12 @@ class BootFVPAction(BootHasMixin, RetryAction):
         self.pipeline = Pipeline(parent=self, job=self.job, parameters=parameters)
         self.pipeline.add_action(BootFVPMain())
         if self.has_prompts(parameters):
+            self.pipeline.add_action(ReadFeedback())
             self.pipeline.add_action(AutoLoginAction())
             if self.test_has_shell(parameters):
                 self.pipeline.add_action(ExpectShellSession())
+                if "transfer_overlay" in parameters:
+                    self.pipeline.add_action(OverlayUnpack())
 
 
 class BootFVPMain(Action):
@@ -71,7 +77,9 @@ class BootFVPMain(Action):
         self.pipeline = Pipeline(parent=self, job=self.job, parameters=parameters)
         self.pipeline.add_action(CheckFVPVersionAction())
         self.pipeline.add_action(StartFVPAction())
-        self.pipeline.add_action(GetFVPSerialAction())
+        if parameters.get("use_telnet", True):
+            self.pipeline.add_action(GetFVPSerialAction())
+            self.pipeline.add_action(ReadFeedback())
 
 
 class BaseFVPAction(Action):
@@ -91,7 +99,6 @@ class BaseFVPAction(Action):
 
     def validate(self):
         super().validate()
-        self.container = "lava-%s-%s" % (self.job.job_id, self.level)
         if "docker" not in self.parameters or "name" not in self.parameters.get(
             "docker", {}
         ):
@@ -99,6 +106,18 @@ class BaseFVPAction(Action):
             raise JobError("Not specified 'docker' in parameters")
         self.docker_image = self.parameters["docker"]["name"]
         self.local_docker_image = self.parameters["docker"].get("local", False)
+
+        # FIXME this emulates the container naming behavior of
+        # lava_dispatcher.utils.docker.DockerRun.
+        #
+        # This entire module should be rewritten to use DockerRun instead of
+        # manually composing docker run command lines.
+        if "container_name" in self.parameters["docker"]:
+            self.container = (
+                self.parameters["docker"]["container_name"] + "-lava-" + self.job.job_id
+            )
+        else:
+            self.container = "lava-%s-%s" % (self.job.job_id, self.level)
 
         options = self.job.device["actions"]["boot"]["methods"]["fvp"]["options"]
 
@@ -110,6 +129,8 @@ class BaseFVPAction(Action):
             self.extra_options += " --privileged"
         for device in options.get("devices", []):
             self.extra_options += " --device %s" % device
+        for network in options.get("networks", []):
+            self.extra_options += " --network %s" % network
         for volume in options.get("volumes", []):
             self.extra_options += " --volume %s" % volume
         if "license_variable" in self.parameters:
@@ -194,22 +215,15 @@ class CheckFVPVersionAction(BaseFVPAction):
             self.logger.debug("Pulling image %s", self.docker_image)
             self.run_cmd(["docker", "pull", self.docker_image])
 
+        fvp_image = self.parameters.get("image")
         fvp_arguments = self.parameters.get("version_args", "--version")
 
-        # Build the command line
-        # The docker image is safe to be included in the command line
-        cmd = self.construct_docker_fvp_command(self.docker_image, fvp_arguments)
-
-        self.logger.debug("Boot command: %s", cmd)
-        shell = ShellCommand(cmd, self.timeout, logger=self.logger)
-
-        shell_connection = ShellSession(self.job, shell)
-        shell_connection = super().run(shell_connection, max_end_time)
-
-        # Wait for the version
-        shell_connection.prompt_str = self.fvp_version_string
-        self.wait(shell_connection)
-        matched_version_string = shell_connection.raw_connection.match.group()
+        fvp_image = shlex.quote(fvp_image)
+        fvp_arguments = shlex.quote(fvp_arguments)
+        cmd = f"docker run --rm {self.docker_image} {fvp_image} {fvp_arguments}"
+        output = self.parsed_command(["sh", "-c", cmd])
+        m = re.match(self.fvp_version_string, output)
+        matched_version_string = m and m.group(0) or output
         result = {
             "definition": "lava",
             "case": "fvp-version",
@@ -220,7 +234,7 @@ class CheckFVPVersionAction(BaseFVPAction):
         }
         self.logger.results(result)
 
-        return shell_connection
+        return connection
 
 
 class StartFVPAction(BaseFVPAction):
@@ -234,6 +248,10 @@ class StartFVPAction(BaseFVPAction):
         self.container = ""
         self.fvp_image = None
         self.fvp_console_string = ""
+        self.fvp_feedbacks = set()
+        self.fvp_feedback_ports = []
+        self.shell = None
+        self.shell_session = None
 
     def validate(self):
         super().validate()
@@ -241,8 +259,12 @@ class StartFVPAction(BaseFVPAction):
             self.errors = "'console_string' is not set."
         else:
             self.fvp_console_string = self.parameters.get("console_string")
+            self.fvp_feedbacks.add(self.fvp_console_string)
         if "arguments" not in self.parameters:
             self.errors = "'arguments' is not set."
+        if "feedbacks" in self.parameters:
+            for feedback in self.parameters.get("feedbacks"):
+                self.fvp_feedbacks.add(feedback)
 
     def run(self, connection, max_end_time):
         fvp_arguments = " ".join(self.parameters.get("arguments"))
@@ -258,29 +280,69 @@ class StartFVPAction(BaseFVPAction):
         shell_connection = super().run(shell_connection, max_end_time)
 
         # Wait for the console string
-        shell_connection.prompt_str = self.fvp_console_string
-        self.wait(shell_connection)
-        # We should now have the matched output
-        if "PORT" not in shell_connection.raw_connection.match.groupdict():
-            raise JobError(
-                "'console_string' should contain a regular expression section, such as '(?P<PORT>\\d+)' to extract the serial port of the FVP. Group name must be 'PORT'"
+        # shell_connection.prompt_str = self.fvp_console_string
+        for str_index in range(len(self.fvp_feedbacks)):
+            shell_connection.prompt_str = list(self.fvp_feedbacks)
+            self.wait(shell_connection)
+            self.logger.debug(
+                "Connection group(0) %s"
+                % shell_connection.raw_connection.match.group(0)
             )
+            if re.match(
+                self.fvp_console_string, shell_connection.raw_connection.match.group(0)
+            ):
+                # this is primary connection
+                # We should now have the matched output
+                if "PORT" not in shell_connection.raw_connection.match.groupdict():
+                    raise JobError(
+                        "'console_string' should contain a regular expression section, such as '(?P<PORT>\\d+)' to extract the serial port of the FVP. Group name must be 'PORT'"
+                    )
 
-        serial_port = shell_connection.raw_connection.match.groupdict()["PORT"]
+                serial_port = shell_connection.raw_connection.match.groupdict()["PORT"]
+                self.set_namespace_data(
+                    action=StartFVPAction.name,
+                    label="fvp",
+                    key="serial_port",
+                    value=serial_port,
+                )
+                self.logger.info("Found FVP port %s", serial_port)
+            else:
+                serial_port = shell_connection.raw_connection.match.groupdict().get(
+                    "PORT", None
+                )
+                if serial_port:
+                    serial_name = shell_connection.raw_connection.match.groupdict().get(
+                        "NAME", None
+                    )
+                    self.fvp_feedback_ports.append(
+                        {"port": serial_port, "name": serial_name}
+                    )
+                    self.logger.info("Found secondary FVP port %s", serial_port)
         self.set_namespace_data(
             action=StartFVPAction.name,
             label="fvp",
-            key="serial_port",
-            value=serial_port,
+            key="feedback_ports",
+            value=self.fvp_feedback_ports,
         )
-        self.logger.info("Found FVP port %s", serial_port)
         self.set_namespace_data(
             action=StartFVPAction.name,
             label="fvp",
             key="container",
             value=self.container,
         )
+        # Although we don't require any more output on this connection,
+        # discarding this may cause SIGHUPs to be sent to the model
+        # which will terminate the model.
+        self.shell = shell
+
+        self.shell_session = shell_connection
         return shell_connection
+
+    def cleanup(self, connection):
+        if self.shell_session:
+            self.logger.debug("Listening to feedback from FVP binary.")
+            self.shell_session.listen_feedback(5)
+        super().cleanup(connection)
 
 
 class GetFVPSerialAction(Action):
@@ -292,9 +354,36 @@ class GetFVPSerialAction(Action):
         serial_port = self.get_namespace_data(
             action=StartFVPAction.name, label="fvp", key="serial_port"
         )
+        feedback_ports = self.get_namespace_data(
+            action=StartFVPAction.name, label="fvp", key="feedback_ports"
+        )
         container = self.get_namespace_data(
             action=StartFVPAction.name, label="fvp", key="container"
         )
+        for feedback_dict in feedback_ports:
+            cmd = "docker exec --interactive --tty %s telnet localhost %s" % (
+                container,
+                feedback_dict["port"],
+            )
+
+            self.logger.debug("Feedback command: %s", cmd)
+            shell = ShellCommand(cmd, self.timeout, logger=self.logger)
+
+            shell_connection = ShellSession(self.job, shell)
+            shell_connection = super().run(shell_connection, max_end_time)
+            shell_connection.raw_connection.logfile.is_feedback = True
+
+            feedback_name = feedback_dict.get("name")
+            if not feedback_name:
+                feedback_name = "_namespace_feedback_%s" % feedback_dict["port"]
+            self.set_namespace_data(
+                action="shared",
+                label="shared",
+                key="connection",
+                value=shell_connection,
+                parameters={"namespace": feedback_name},
+            )
+
         cmd = "docker exec --interactive --tty %s telnet localhost %s" % (
             container,
             serial_port,

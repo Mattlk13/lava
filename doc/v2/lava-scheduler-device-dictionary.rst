@@ -10,7 +10,7 @@ that device type, and how LAVA can use it. A :term:`device dictionary`
 customizes that template to include the data for one specific instance of that
 device. This includes details like the commands to connect specific serial
 ports for this device, commands to operate remote power control, device serial
-numbers and elements of the network topology for :term:`vland` support.
+numbers and elements of the network topology for :term:`VLANd` support.
 
 Other fields can also be used in the templates. The only field which is
 compulsory is **extends** which links this device dictionary to a specific
@@ -45,9 +45,9 @@ Commands
   on deployment method and device type template support.
 
 * **device_info** - a list of dictionaries, where each dictionary value can
-  contain keys such as 'board_id', 'usb_vendor_id', 'usb_product_id', which can
-  be added to the LXC for device specific tasks dynamically, whenever the
-  device is reset, using a ``udev`` rule.
+  contain keys such as 'board_id', 'usb_vendor_id', 'usb_product_id',
+  'wait_device_board_id', which can be added to the LXC for device specific
+  tasks dynamically, whenever the device is reset, using a ``udev`` rule.
 
 * **static_info** - a list of dictionaries, where each dictionary value can
   contain keys such as 'board_id', 'usb_vendor_id', 'usb_product_id', which

@@ -19,6 +19,8 @@
 # with this program; if not, see <http://www.gnu.org/licenses>.
 
 import shutil
+import os
+import time
 
 from lava_common.exceptions import InfrastructureError
 from lava_dispatcher.action import Pipeline, Action
@@ -122,24 +124,83 @@ class FlashCMSISAction(Action):
             )
             self.filelist.extend([action_arg])
 
+    def _sync_data(self, dstdir, method_parameters):
+        """Make sure that data was actually written (programmed) to the
+        underlying device and detect any errors with that."""
+
+        # Waiting for CMSIS_DAP auto remount is the default behavior,
+        # but we allow to bypass it in case that particular hardware
+        # has problems with it.
+        if method_parameters.get("skip_autoremount_wait", False):
+            self.run_cmd(["sync", dstdir], error_msg="Unable to sync %s" % dstdir)
+        else:
+            t_start = time.time()
+            self.logger.debug("Waiting for CMSIS-DAP MSD to self-unmount")
+            while True:
+                # os.sync() causes OS to pick up changes on the underlying MSD device.
+                os.sync()
+                if not os.listdir(dstdir):
+                    break
+                # Small delay so we didn't miss this "unmount".
+                time.sleep(0.1)
+
+            self.logger.debug("Waiting for CMSIS-DAP MSD to self-remount")
+            while True:
+                # os.sync() causes OS to pick up changes on the underlying MSD device.
+                os.sync()
+                flist = os.listdir(dstdir)
+                if flist:
+                    break
+                time.sleep(0.5)
+
+            self.logger.debug(
+                "CMSIS-DAP MSD self-remount cycle: %.2fs" % (time.time() - t_start)
+            )
+
+            if "FAIL.TXT" in flist:
+                with open(dstdir + "/FAIL.TXT") as f:
+                    fail_txt = f.read().rstrip()
+                raise InfrastructureError(
+                    "Unsuccessful cmsis-dap boot: FAIL.TXT present after file copying: "
+                    + fail_txt
+                )
+
     def run(self, connection, max_end_time):
         connection = super().run(connection, max_end_time)
+        method_parameters = self.job.device["actions"]["boot"]["methods"]["cmsis-dap"][
+            "parameters"
+        ]
         dstdir = mkdtemp()
         # mount
         self.run_cmd(
             ["mount", "-t", "vfat", self.usb_mass_device, dstdir],
             error_msg="Unable to mount USB device %s" % self.usb_mass_device,
         )
-        # copy files
-        for f in self.filelist:
-            self.logger.debug("Copying %s to %s", f, dstdir)
-            shutil.copy2(f, dstdir)
-        # sync
-        self.run_cmd(["sync", dstdir], error_msg="Unable to sync %s" % dstdir)
-        # umount
-        self.run_cmd(
-            ["umount", self.usb_mass_device],
-            error_msg="Unable to unmount USB device %s" % self.usb_mass_device,
-        )
+        # log DAPLink metadata, to be able to correlate possible job issues
+        # with bootloader version/options
+        self.logger.debug("DAPLink virtual disk files: %s" % os.listdir(dstdir))
+        if os.path.isfile(dstdir + "/DETAILS.TXT"):
+            with open(dstdir + "/DETAILS.TXT") as f:
+                self.logger.debug(
+                    "DAPLink Firmware DETAILS.TXT:\n%s" % f.read().replace("\r\n", "\n")
+                )
+
+        try:
+            # copy files
+            for f in self.filelist:
+                self.logger.debug("Copying %s to %s", f, dstdir)
+                shutil.copy2(f, dstdir)
+            # sync written data
+            self._sync_data(dstdir, method_parameters)
+        finally:
+            # umount
+            self.run_cmd(
+                ["umount", self.usb_mass_device],
+                error_msg="Unable to unmount USB device %s" % self.usb_mass_device,
+            )
+
+        post_unmount_delay = method_parameters.get("post_unmount_delay", 1)
+        self.logger.debug("Post-unmount stabilization delay: %ss" % post_unmount_delay)
+        time.sleep(post_unmount_delay)
 
         return connection

@@ -1,3 +1,104 @@
+lava (2021.05-1) unstable; urgency=medium
+
+  * LAVA Software 2021.05 release
+
+  [ Hiraku Toyooka ]
+  * [fa2dcbbe] dispatcher: device-types: fix broken xilinx-zcu102 device-type
+
+  -- Stevan Radaković <stevan.radakovic@linaro.org>  Thu, 27 May 2021 16:08:21 +0100
+
+lava (2021.04.post1-1) unstable; urgency=medium
+
+  * Fix
+  a002b8d4 debian: fix dependency on python3-django-environ
+  3cf74beb scheduler: use token management for secrets dictionary
+  * Update
+  276afa93 docker: install qemu-system-sparc
+
+ -- Stevan Radaković <stevan.radakovic@linaro.org>  Tue, 04 May 2021 09:34:21 +0100
+
+lava (2021.04-1) unstable; urgency=medium
+
+  * LAVA Software 2021.04 release
+
+  [ Antonio Terceiro ]
+  * [62e0369c8] dispatcher: fvp: simplify getting FastModel version
+
+ -- Stevan Radaković <stevan.radakovic@linaro.org>  Fri, 27 Apr 2021 12:48:21 +0100
+
+lava (2021.03.post1-1) unstable; urgency=medium
+
+  * Security hotfix
+  2bdbd462 Fix authorization issues in REST API.
+  * Update
+  eed28e69 fvp: allow to specify the docker network
+  49676b29 Add namespace to a feedback channel.
+  dfd24bad doc: authentication: add redirect URI to Gitlab provider
+
+ -- Stevan Radakovic <stevan.radakovic@linaro.org>  Mon, 22 Mar 2021 13:13:32 +0100
+
+lava (2021.03-1) unstable; urgency=medium
+
+  * LAVA Software 2021.03 release
+
+  [ Antonio Terceiro ]
+  * [43ea48e11] debian: move possible celery backends to Suggests:
+
+ -- Stevan Radaković <stevan.radakovic@linaro.org>  Fri, 12 Mar 2021 11:28:21 +0100
+
+lava (2021.01-1) unstable; urgency=medium
+
+  [ Antonio Terceiro ]
+  * [ac4f863fd] autopkgtest: management: run from $HOME
+
+ -- Stevan Radakovic <stevan.radakovic@linaro.org>  Tue, 26 Jan 2021 13:59:07 +0100
+
+lava (2020.12-1) unstable; urgency=medium
+
+  * LAVA Software 2020.12 release
+
+  [ Kumar Gala ]
+  * lava_dispatcher_host: Utilize pyudev to share devices
+
+ -- Remi Duraffort <remi.duraffort@linaro.org>  Thu, 10 Dec 2020 17:28:16 +0100
+
+lava (2020.10-1) unstable; urgency=medium
+
+  * LAVA Software 2020.10 release
+
+  [ Rémi Duraffort ]
+  * Add lava-celery-worker and add celery requirement
+  * debian: do not activate lava-celery-worker service by default
+
+ -- Remi Duraffort <remi.duraffort@linaro.org>  Mon, 02 Nov 2020 09:02:37 +0100
+
+lava (2020.09-1) unstable; urgency=medium
+
+  * LAVA Software 2020.09 release
+
+  [ Rémi Duraffort ]
+  *  worker: replace lava-slave by lava-worker
+  *  Replace lava-master and lava-logs by lava-scheduler
+  *  Drop create_certificate
+  *  debian/lava-server: drop dependency on iproute2
+  * Fix debian changelog
+
+  [ Antonio Terceiro ]
+  *  lava-dispatcher-host: add missing dependency
+  *  lava-dispatcher-host: provide lava-docker-worker service definition
+
+ -- Remi Duraffort <remi.duraffort@linaro.org>  Thu, 01 Oct 2020 10:07:53 +0200
+
+lava (2020.08-1) unstable; urgency=medium
+
+  * LAVA Software 2020.08 release
+
+  [ Antonio Terceiro ]
+  * debian: bump debhelper compat level to 12
+  * autopkgtest: fix against change in settings
+
+ -- Remi Duraffort <remi.duraffort@linaro.org>  Thu, 20 Aug 2020 10:58:25 +0200
+
 lava (2020.07-1) unstable; urgency=medium
 
   * LAVA Software 2020.07 release

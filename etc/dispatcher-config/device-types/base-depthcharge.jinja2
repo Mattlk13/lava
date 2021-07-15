@@ -5,7 +5,7 @@
 {% set kernel_args = [base_kernel_args, extra_kernel_args] | join(" ") %}
 
 {% set base_depthcharge_commands = depthcharge_tftp_commands | default(
-"          - tftpboot {SERVER_IP} {FIT} {CMDLINE}
+"          - tftpboot {SERVER_IP} {DEPTHCHARGE_KERNEL} {CMDLINE} {DEPTHCHARGE_RAMDISK}
 ") -%}
 
 {% block vland %}
@@ -22,6 +22,10 @@ actions:
       mkimage_arch: {{ mkimage_fit_arch }}
 {% endif %}
     methods:
+{% if flasher_deploy_commands %}
+      flasher:
+        commands: {{ flasher_deploy_commands }}
+{% endif %}
       tftp:
     connections:
       serial:
@@ -29,6 +33,7 @@ actions:
     connections:
       serial:
     methods:
+      minimal:
       depthcharge:
         parameters:
           start_message: {{ start_message | default('Starting netboot') }}

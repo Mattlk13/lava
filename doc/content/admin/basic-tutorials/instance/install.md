@@ -20,20 +20,19 @@ Install the dependencies: `docker` and `docker-compose`:
 
 ```shell
 apt-get update
-apt-get install docker.io docker-compose git
+apt-get install python3-pip git
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh get-docker.sh
+python3 -m pip install docker-compose
 ```
 
-??? tip "Old Debian version"
-    On old Debian versions, docker should be installed from the official docker repository.
-    ```shell
-    apt-get install ca-certificates gnupg2 wget
-    wget https://download.docker.com/linux/debian/gpg
-    apt-key add gpg
-    echo "deb [arch=amd64] https://download.docker.com/linux/debian buster stable" > /etc/apt/sources.list.d/docker.list
-    apt-get update
-    apt-get install docker-ce
-    ```
+??? tip "Debian Testing/Sid User"
+    Install `docker.io` instead if the above docker CE installation script
+    doesn't support your distribution.
 
+    ```shell
+    apt-get install docker.io
+    ```
 ### Install
 
 Get the **docker-compose** files from [gitlab][lava-docker-compose] and use it.
@@ -86,6 +85,16 @@ apt-get install lava
 
 ### Starting
 
+Enable default LAVA server Apache configuration:
+
+```shell
+a2dissite 000-default
+a2enmod proxy
+a2enmod proxy_http
+a2ensite lava-server.conf
+service apache2 restart
+```
+
 You can start the different services:
 
 ```shell
@@ -93,9 +102,8 @@ service apache2 start
 service postgresql start
 service lava-server-gunicorn start
 service lava-publisher start
-service lava-master start
-service lava-logs start
-service lava-slave start
+service lava-scheduler start
+service lava-worker start
 ```
 
 The newly created instance is now available at [localhost].

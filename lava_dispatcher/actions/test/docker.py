@@ -32,7 +32,6 @@ from lava_dispatcher.power import ReadFeedback
 from lava_dispatcher.shell import ShellCommand, ShellSession
 from lava_dispatcher.utils.docker import DockerRun
 from lava_dispatcher.utils.udev import get_udev_devices
-from lava_dispatcher_host import share_device_with_container_docker
 from lava_dispatcher_host.action import DeviceContainerMappingMixin
 
 
@@ -102,6 +101,7 @@ class DockerTestSetEnvironment(Action, GetBoardId):
     def run(self, connection, max_end_time):
         environment = self.job.parameters.get("environment", {})
         environment["ANDROID_SERIAL"] = self.get_board_id()
+        environment["LAVA_BOARD_ID"] = self.get_board_id()
 
         connections = self.job.device.get("commands", {}).get("connections", {})
         for name, command in connections.items():
@@ -164,16 +164,15 @@ class DockerTestShell(TestShellAction, GetBoardId, DeviceContainerMappingMixin):
             action="test", label="results", key="lava_test_results_dir"
         ).strip("/")
 
-        image = self.parameters["docker"]["image"]
-        local = self.parameters["docker"].get("local")
         container = "lava-docker-test-shell-%s-%s" % (self.job.job_id, self.level)
 
-        docker = DockerRun(image)
-        docker.local(local)
+        docker = DockerRun.from_parameters(self.parameters["docker"], self.job)
         docker.prepare()
         docker.bind_mount(os.path.join(location, overlay), "/" + overlay)
 
-        namespace = self.parameters.get("namespace")
+        namespace = self.parameters.get(
+            "downloads-namespace", self.parameters.get("namespace")
+        )
         if namespace:
             downloads_dir = pathlib.Path(self.job.tmp_dir) / "downloads" / namespace
             if downloads_dir.exists():
@@ -184,7 +183,7 @@ class DockerTestShell(TestShellAction, GetBoardId, DeviceContainerMappingMixin):
             docker.bind_mount(bind_mount[0], bind_mount[1], read_only)
 
         docker.interactive()
-        docker.hostname("lava")
+        docker.tty()
         docker.name(container)
         docker.environment("PS1", "docker-test-shell:$ ")
 
@@ -206,13 +205,21 @@ class DockerTestShell(TestShellAction, GetBoardId, DeviceContainerMappingMixin):
 
         docker.wait()
 
+        # share all the devices as there isn't a 1:1 relationship between
+        # the trigger and actual sharing of the devices
         for dev in devices:
-            share_device_with_container_docker(container, dev)
+            if not os.path.islink(dev):
+                self.trigger_share_device_with_container(dev)
 
-        super().run(shell_connection, max_end_time)
+        for dev in devices:
+            docker.wait_file(dev)
 
-        # finish the container
-        shell_connection.finalise()
+        try:
+            super().run(shell_connection, max_end_time)
+        finally:
+            # finish the container
+            shell_connection.finalise()
+            docker.destroy()
 
         # return the original connection untouched
         self.__set_connection__(connection)

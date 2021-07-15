@@ -197,7 +197,7 @@ included in the prompt, this can be included in the ``prompt``:
       prompts:
       - 'root@debian:'
 
-When using the :term:`lxc` :term:`protocol`, the hostname element of the
+When using the :term:`LXC` :term:`protocol`, the hostname element of the
 prompt will vary:
 
 .. code-block:: yaml
@@ -785,8 +785,12 @@ bootloader in interactive tests and then booting to the OS.
 musca
 =====
 
-The ``musca`` method is used to boot `musca devices
-<https://developer.arm.com/products/system-design/development-boards/iot-test-chips-and-boards/musca-a-test-chip-board>`__.
+The ``musca`` method is used to boot musca devices. Currently supported are the `musca a
+<https://developer.arm.com/products/system-design/development-boards/iot-test-chips-and-boards/musca-a-test-chip-board>`__,
+`musca b
+<https://developer.arm.com/tools-and-software/development-boards/iot-test-chips-and-boards/musca-b-test-chip-board>`__,
+and `musca s1
+<https://developer.arm.com/tools-and-software/development-boards/iot-test-chips-and-boards/musca-s1-test-chip-board>`__.
 Unlike the ``minimal`` boot, the board has to be powered on before the serial will be available
 as the board is powered by the USB that provides the serial connection also.
 Therefore, the board is powered on then connection to the serial is made.
@@ -815,6 +819,14 @@ The ``pyocd`` boot method takes no arguments or parameters.
       method: pyocd
       timeout:
         minutes: 10
+
+The ``pyocd`` boot method requires configuration on the device type level.
+Following configuration options are supported:
+
+* ``command`` - executable command to invoke
+* ``options`` - list of options to pass to the executable
+* ``connect_before_flash`` - if ``true``, connect to device before running
+  pyocd flash command, otherwise after the command (default is ``false``)
 
 .. index:: boot method jlink
 
@@ -1277,6 +1289,8 @@ If you also want to enable ``remote uuu`` feature, in which situation your devic
 You could follow https://docs.docker.com/engine/install/linux-postinstall/#configure-where-the-docker-daemon-listens-for-connections to configure remote docker support.
 
 You could follow https://docs.docker.com/engine/security/https/ to protect the docker daemon socket if you are also care about security.
+
+.. note:: The minimal docker version to run uuu is 19.03. This is due to a bug in earlier docker versions. See https://github.com/moby/moby/pull/37665.
 
 Usage
 -----

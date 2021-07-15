@@ -78,12 +78,13 @@ def test_run(action, mocker):
         "lava_dispatcher.actions.test.docker.get_udev_devices",
         return_value=["/dev/foobar"],
     )
-    share_device_with_container_docker = mocker.patch(
-        "lava_dispatcher.actions.test.docker.share_device_with_container_docker"
+    trigger_share_device_with_container = mocker.patch(
+        "lava_dispatcher_host.action.DeviceContainerMappingMixin.trigger_share_device_with_container"
     )
     docker_wait = mocker.patch("lava_dispatcher.utils.docker.DockerRun.wait")
-    docker_local = mocker.patch("lava_dispatcher.utils.docker.DockerRun.local")
+    docker_wait_file = mocker.patch("lava_dispatcher.utils.docker.DockerRun.wait_file")
     docker_prepare = mocker.patch("lava_dispatcher.utils.docker.DockerRun.prepare")
+    docker_destroy = mocker.patch("lava_dispatcher.utils.docker.DockerRun.destroy")
 
     action.validate()
     action.run(connection, time.time() + 1000)
@@ -110,6 +111,7 @@ def test_run(action, mocker):
         for l in environmentfile.open().read().splitlines()
     }
     assert env["export ANDROID_SERIAL"] == "0123456789"
+    assert env["export LAVA_BOARD_ID"] == "0123456789"
     assert env["export LAVA_CONNECTION_COMMAND_UART0"] == "'telnet localhost 4002'"
     assert env["export LAVA_CONNECTION_COMMAND_UART1"] == "'telnet 192.168.1.200 8001'"
     # primary connection:
@@ -134,20 +136,23 @@ def test_run(action, mocker):
     )
 
     # prepares container image
-    docker_local.assert_called_with(None)
     docker_prepare.assert_called()
 
     # waits for container to be available
     docker_wait.assert_called()
+    docker_wait_file.assert_called()
 
     # device shared with docker
-    share_device_with_container_docker.assert_called_with(mocker.ANY, "/dev/foobar")
+    trigger_share_device_with_container.assert_called_with("/dev/foobar")
 
     # the lava-test-shell implementation gets called with the docker shell
     action_run.assert_called_with(docker_connection, mocker.ANY)
 
     # the docker shell gets finalized
     docker_connection.finalise.assert_called()
+
+    # the docker container gets destroyed
+    docker_destroy.assert_called()
 
 
 def test_stages(first_test_action, second_test_action):

@@ -46,7 +46,7 @@ else
   docker run --name "$LAVAFED_CONTAINER_NAME" -d \
       --restart always \
       --add-host "postgresql:172.17.0.1" \
-      -p 9000:80 -p 6500:5500 -p 6555:5555 -p 6556:5556 \
+      -p 9000:80 -p 9001:8001 \
       -v "/etc/lavafed/lava-dispatcher/certificates.d/:/etc/lava-dispatcher/certificates.d/" \
       -v "/etc/lavafed/lava-server/instance.conf:/etc/lava-server/instance.conf" \
       -v "/etc/lavafed/lava-server/lava-logs:/etc/lava-server/lava-logs" \
@@ -54,6 +54,6 @@ else
       -v "/etc/lavafed/lava-server/lava-server.conf:/etc/apache2/sites-enabled/lava-server.conf" \
       -v "/etc/lavafed/lava-server/settings.conf:/etc/lava-server/settings.conf" \
       -v "lavafed-master-jobs:/var/lib/lava-server/default/media/" \
-      -e SERVICES="apache2 lava-logs lava-master lava-publisher gunicorn" \
+      -e SERVICES="apache2 lava-publisher lava-scheduler gunicorn" \
       "$IMAGE_TAG"
 fi

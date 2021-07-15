@@ -19,11 +19,12 @@
 
 import csv
 import io
-import os
 import pathlib
 import voluptuous
 import yaml
+import jinja2
 import lava_common.schemas as schemas
+import lava_common.schemas.test.testdef as testdef
 
 from django.conf import settings
 from django.http.response import HttpResponse
@@ -38,6 +39,7 @@ from lava_results_app.utils import (
     testcase_export_fields,
 )
 from lava_rest_app.base import views as base_views
+from lava_rest_app.base.pasers import PlainTextParser
 from lava_rest_app import filters
 from lava_scheduler_app.dbutils import testjob_submission
 from lava_scheduler_app.schema import SubmissionException
@@ -52,7 +54,9 @@ from rest_framework.permissions import (
 from rest_framework_extensions.mixins import NestedViewSetMixin
 from rest_framework.response import Response
 from rest_framework.exceptions import ParseError, PermissionDenied, ValidationError
+from rest_framework.permissions import AllowAny
 from rest_framework.utils import formatting
+from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from lava_scheduler_app.models import (
     Alias,
     Device,
@@ -82,9 +86,13 @@ class TestJobViewSet(base_views.TestJobViewSet):
 
     * `/jobs/`
 
-    You can alidate the given job definition against the schema validator via POST request on:
+    You can validate the given job definition against the schema validator via POST request on:
 
     * `/jobs/validate/`
+
+    You can validate the given test definition against the schema validator via POST request on:
+
+    * `/jobs/validate_testdef/`
 
     The logs, test results and test suites of a specific TestJob are available at:
 
@@ -155,7 +163,9 @@ class TestJobViewSet(base_views.TestJobViewSet):
     def metadata(self, request, **kwargs):
         return Response({"metadata": self.get_object().get_metadata_dict()})
 
-    @action(methods=["post"], detail=False, suffix="validate")
+    @action(
+        methods=["post"], detail=False, suffix="validate", permission_classes=[AllowAny]
+    )
     def validate(self, request, **kwargs):
         definition = request.data.get("definition", None)
         strict = request.data.get("strict", False)
@@ -173,6 +183,29 @@ class TestJobViewSet(base_views.TestJobViewSet):
         except voluptuous.Invalid as exc:
             return Response(
                 {"message": "Job invalid: %s" % exc.msg}, status=status.HTTP_200_OK
+            )
+
+    @action(
+        methods=["post"],
+        detail=False,
+        suffix="validate-testdef",
+        permission_classes=[AllowAny],
+    )
+    def validate_testdef(self, request, **kwargs):
+        definition = request.data.get("definition", None)
+        if not definition:
+            raise ValidationError({"definition": "Test definition is required."})
+
+        data = yaml_safe_load(definition)
+        try:
+            testdef.validate(data)
+            return Response(
+                {"message": "Test definition valid."}, status=status.HTTP_200_OK
+            )
+        except voluptuous.MultipleInvalid as exc:
+            return Response(
+                {"message": "Test defnition invalid: %s" % str(exc)},
+                status=status.HTTP_200_OK,
             )
 
     @action(methods=["post"], detail=True, suffix="resubmit")
@@ -378,6 +411,8 @@ class DeviceTypeViewSet(base_views.DeviceTypeViewSet):
 
 
 class DeviceViewSet(base_views.DeviceViewSet, viewsets.ModelViewSet):
+    parser_classes = [JSONParser, FormParser, MultiPartParser, PlainTextParser]
+
     lookup_value_regex = r"[\_\w0-9.-]+"
     serializer_class = serializers.DeviceSerializer
     filter_class = filters.DeviceFilter
@@ -422,7 +457,7 @@ class DeviceViewSet(base_views.DeviceViewSet, viewsets.ModelViewSet):
             return response
 
         elif request.method == "POST":
-            if not request.user.has_perm("lava_scheduler_app.change_device"):
+            if not self.get_object().can_change(request.user):
                 raise PermissionDenied(
                     "Insufficient permissions. Please contact system administrator."
                 )
@@ -442,6 +477,32 @@ class DeviceViewSet(base_views.DeviceViewSet, viewsets.ModelViewSet):
                     )
             else:
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(
+        methods=["post"], detail=False, suffix="validate", permission_classes=[AllowAny]
+    )
+    def validate(self, request, **kwargs):
+        """
+        Takes a string of a device dictionary to validate if it can be
+        rendered and loaded correctly.
+        """
+        devicedict = request.data
+        if not devicedict:
+            raise ValidationError({"device": "Device dictionary is required."})
+
+        try:
+            template = jinja2.Environment(
+                loader=File("device").loader(), autoescape=False, trim_blocks=True
+            ).from_string(devicedict)
+            yaml_safe_load(template.render())
+            return Response(
+                {"message": "Device dictionary valid."}, status=status.HTTP_200_OK
+            )
+        except Exception as exc:
+            return Response(
+                {"message": "Device dictionary invalid: %s" % str(exc)},
+                status=status.HTTP_200_OK,
+            )
 
 
 class WorkerViewSet(base_views.WorkerViewSet, viewsets.ModelViewSet):
@@ -531,45 +592,6 @@ class WorkerViewSet(base_views.WorkerViewSet, viewsets.ModelViewSet):
             else:
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-    @detail_route(methods=["get", "post"], suffix="certificate")
-    def certificate(self, request, **kwargs):
-        if not self.get_object():
-            raise Http404("Worker not found.")
-        if request.method == "GET":
-            if not self.get_object().can_change(request.user):
-                raise PermissionDenied(
-                    "Insufficient permissions. Please contact system administrator."
-                )
-            try:
-                path = pathlib.Path(settings.SLAVES_CERTS) / (
-                    "%s.key" % self.get_object().hostname
-                )
-                data = (path).read_text(encoding="utf-8")
-            except OSError:
-                raise ParseError(
-                    "Worker '%s' does not have '%s' file"
-                    % (self.get_object().hostname, path.name)
-                )
-            response = HttpResponse(
-                data.encode("utf-8"), content_type="application/yaml"
-            )
-            response["Content-Disposition"] = "attachment; filename=%s" % path.name
-            return response
-
-        elif request.method == "POST":
-            if not self.get_object().can_change(request.user):
-                raise PermissionDenied(
-                    "Insufficient permissions. Please contact system administrator."
-                )
-            path = pathlib.Path(settings.SLAVES_CERTS) / (
-                "%s.key" % self.get_object().hostname
-            )
-            serializer = serializers.SlaveKeySerializer(data=request.data)
-            if serializer.is_valid():
-                return self._set_file(request, path, serializer.validated_data["key"])
-            else:
-                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
 
 class AliasViewSet(viewsets.ModelViewSet):
     queryset = Alias.objects
@@ -651,20 +673,6 @@ class SystemViewSet(viewsets.ViewSet):
     def list(self, request, **kwargs):
         return Response()
 
-    @action(detail=False, methods=["get"], suffix="certificate")
-    def certificate(self, request, **kwargs):
-        try:
-            master_key_path = pathlib.Path(settings.MASTER_CERT_PUB)
-            data = (master_key_path).read_text(encoding="utf-8")
-        except FileNotFoundError:
-            raise Http404("There is no master public key %s" % master_key_path.name)
-
-        response = HttpResponse(data.encode("utf-8"), content_type="application/yaml")
-        response["Content-Disposition"] = (
-            "attachment; filename=%s" % master_key_path.name
-        )
-        return response
-
     @action(detail=False, methods=["get"], suffix="master_config")
     def master_config(self, request, **kwargs):
         """
@@ -679,58 +687,14 @@ class SystemViewSet(viewsets.ViewSet):
 
         ```json
         {
-          "MASTER_URL": "tcp://<lava-master-dns>:5556",
-          "LOGGING_URL": "tcp://<lava-master-dns>:5555",
-          "ENCRYPT": false,
-          "IPv6": false,
           "EVENT_SOCKET": "tcp://*:5500",
           "EVENT_TOPIC": "org.linaro.validation",
           "EVENT_NOTIFICATION": true,
           "LOG_SIZE_LIMIT": 10,
         }
         ```
-        If `ENCRYPT` is `true`, clients MUST already have a usable
-        client certificate installed on the master AND the current
-        master certificate installed on the client, before a
-        connection can be made.
         """
-        data = {
-            "master_socket": "tcp://<lava-master-dns>:5556",
-            "socket": "tcp://<lava-master-dns>:5555",
-            "encrypt": False,
-            "ipv6": False,
-        }
-
-        master = {"ERROR": "invalid master config"}
-        filename = os.path.join(settings.MEDIA_ROOT, "lava-master-config.yaml")
-        if os.path.exists(filename):
-            try:
-                with open(filename, "r") as output:
-                    master = yaml_safe_load(output)
-            except yaml.YAMLError as exc:
-                return Response(
-                    data=master, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        if master:
-            data.update(master)
-
-        log_config = {"ERROR": "invalid logging config"}
-        filename = os.path.join(settings.MEDIA_ROOT, "lava-logs-config.yaml")
-        if os.path.exists(filename):
-            try:
-                with open(filename, "r") as output:
-                    log_config = yaml_safe_load(output)
-            except yaml.YAMLError as exc:
-                return Response(
-                    data=log_config, status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                )
-        if log_config:
-            data.update(log_config)
         ret_dict = {
-            "MASTER_URL": data["master_socket"],
-            "LOGGING_URL": data["socket"],
-            "IPv6": data["ipv6"],
-            "ENCRYPT": data.get("encrypt", False),
             "EVENT_TOPIC": settings.EVENT_TOPIC,
             "EVENT_SOCKET": settings.EVENT_SOCKET,
             "EVENT_NOTIFICATION": settings.EVENT_NOTIFICATION,

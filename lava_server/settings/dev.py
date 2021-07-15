@@ -21,6 +21,7 @@
 
 import contextlib
 from pathlib import Path
+import os
 
 from lava_server.settings.common import *
 
@@ -35,7 +36,7 @@ DEBUG = True
 PROJECT_SRC_DIR = (Path(__file__).parent.resolve() / ".." / "..").resolve()
 
 # Top-level directory of the static files
-PROJECT_STATE_DIR = PROJECT_SRC_DIR / "tmp"
+PROJECT_STATE_DIR = Path(os.getenv("LAVA_STATE_DIR") or PROJECT_SRC_DIR / "tmp")
 
 # Create state directory if needed
 PROJECT_STATE_DIR.mkdir(parents=True, exist_ok=True)
@@ -77,6 +78,7 @@ SECRET_KEY = "00000000000000000000000000000000000000000000000000"
 ALLOWED_HOSTS = ["*"]
 CSRF_COOKIE_SECURE = False
 SESSION_COOKIE_SECURE = False
+ALLOW_VERSION_MISMATCH = False
 
 # Any emails that would normally be sent are redirected to stdout.
 # This setting is only used for django 1.2 and newer.

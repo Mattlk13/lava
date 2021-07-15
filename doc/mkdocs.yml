@@ -12,8 +12,8 @@ theme:
   name: "material"
   language: "en"
   include_sidebar: true
-  feature:
-    tabs: true
+  features:
+  - navigation.tabs
   palette:
     primary: "light-green"
     accent: "light-green"
@@ -89,8 +89,11 @@ nav:
     - Proxy: admin/advanced-tutorials/proxy.md
     - Remote database: admin/advanced-tutorials/remote-database.md
     - Remote workers: admin/advanced-tutorials/remote-workers.md
+    - Docker worker: admin/advanced-tutorials/docker-worker.md
     - Growing your lab: admin/advanced-tutorials/growing-your-lab.md
+    - Deploying RPi4 as worker: admin/advanced-tutorials/deploying-rpi4b-as-worker.md
     - Device dictionary sync: admin/advanced-tutorials/sync-records-from-dictionary.md
+    - Logs in NoSQL: admin/advanced-tutorials/logging-database.md
     - Trouble shooting: admin/advanced-tutorials/trouble-shooting.md
 
 - Developer guide:
@@ -132,10 +135,9 @@ nav:
   - Services:
     - apache2: technical-references/services/apache2.md
     - lava-coordinator: technical-references/services/lava-coordinator.md
-    - lava-logs: technical-references/services/lava-logs.md
-    - lava-master: technical-references/services/lava-master.md
     - lava-publisher: technical-references/services/lava-publisher.md
+    - lava-scheduler: technical-references/services/lava-scheduler.md
     - lava-server-gunicorn: technical-references/services/lava-server-gunicorn.md
-    - lava-slave: technical-references/services/lava-slave.md
+    - lava-worker: technical-references/services/lava-worker.md
     - postgresql: technical-references/services/postgresql.md
   - Test definition: technical-references/test-definition.md
