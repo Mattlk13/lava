@@ -35,6 +35,7 @@ def schema():
                     Optional("parameters"): dict,
                     Optional("params"): dict,
                     Optional("recursive"): bool,
+                    Optional("expected"): [str],
                     **common,
                 },
                 {
@@ -44,6 +45,7 @@ def schema():
                     Optional("parameters"): dict,
                     Optional("params"): dict,
                     Optional("headers"): dict,
+                    Optional("expected"): [str],
                     **common,
                 },
                 {
