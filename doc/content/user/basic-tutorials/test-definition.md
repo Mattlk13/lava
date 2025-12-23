@@ -310,17 +310,15 @@ both are provided, the value in the job definition takes precedence.
 
 ## Expected
 
-The `expected` dictionary allows users to define a list of expected test cases. At the
-end of each test run, missing expected test cases from the test results are marked as
-fail. Conversely, test cases present in the results but not in the expected list are
-logged as warnings.
+The `expected` dictionary allows users to define a list of expected test cases.
+At the end of each test run, missing expected test cases from the test results
+are marked as fail. Conversely, test cases present in the results but not in the
+expected list are logged as warnings.
 
 With the following test definition example, tc3 and tc4 will be reported as `fail`,
 and warnings will be logged for tc5 and tc6.
 
-!!! example "Test definition"
-
-```yaml
+```yaml title="Test definition"
 metadata:
   format: Lava-Test Test Definition 1.0
   name: expected-testdef-example
@@ -333,12 +331,10 @@ expected:
   - tc4
 ```
 
-The list can be defined in either the test definition or the job definition. If both are
-provided, the value in the job definition takes precedence.
+The list can be defined in either the test definition or the job definition. If
+both are provided, the value in the job definition takes precedence.
 
-!!! example "Job definition"
-
-```yaml
+```yaml title="Job definition"
 - test:
   definitions:
     - repository: https://gitlab.com/lava/functional-tests.git
