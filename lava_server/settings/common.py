@@ -550,7 +550,10 @@ def update(values):
             group_types = get_ldap_group_types()
             if group_class in group_types:
                 group_namespace = {}
-                exec(f"from django_auth_ldap.config import {group_class}", group_namespace)
+                exec(
+                    f"from django_auth_ldap.config import {group_class}",
+                    group_namespace,
+                )
                 AUTH_LDAP_GROUP_TYPE = eval(group_type, group_namespace)
 
     elif AUTH_DEBIAN_SSO:
