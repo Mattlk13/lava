@@ -549,8 +549,12 @@ def update(values):
             group_class = group_type.split("(", 1)[0]
             group_types = get_ldap_group_types()
             if group_class in group_types:
-                exec("from django_auth_ldap.config import " + group_class)
-                AUTH_LDAP_GROUP_TYPE = eval(group_type)
+                group_namespace = {}
+                exec(
+                    f"from django_auth_ldap.config import {group_class}",
+                    group_namespace,
+                )
+                AUTH_LDAP_GROUP_TYPE = eval(group_type, group_namespace)
 
     elif AUTH_DEBIAN_SSO:
         MIDDLEWARE.append("lava_server.debian_sso.DebianSsoUserMiddleware")
